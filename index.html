@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HYDRO-ROV · Inspección de redes</title>
+<meta name="description" content="HYDRO-ROV: inspección CCTV de redes de alcantarillado con sonda y equipo robotizado. Cada tramo grabado, ubicado y documentado. Quindío, Colombia.">
+<meta property="og:title" content="HYDRO-ROV · La red, vista por dentro.">
+<meta property="og:description" content="Inspección de redes de alcantarillado con sonda y equipo robotizado.">
+<meta property="og:url" content="https://hydro-rov.com">
+<meta name="theme-color" content="#0A1626">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230A2A4A'/%3E%3Ccircle cx='32' cy='32' r='19' fill='none' stroke='%2336B5D6' stroke-width='6'/%3E%3Cpath d='M17 40 Q32 33 47 40' fill='none' stroke='%2336B5D6' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='29' r='5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&family=Barlow+Condensed:wght@700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: sobrio, formal (usted), titulares cortos terminados en punto — la línea de info.eva-pmo.com.
+   IDEA: la pantalla del operador CCTV: lo que la cámara ve dentro del tubo y los datos del tramo al lado.
+   PICTURE: consola oscura con la vista del tubo; equipos y corte de la vía dibujados en tarjetas blancas.
+   COLOUR and TYPE: blanco y gris claro alternos, tinta casi negra, cian y azul marino del logo; IBM Plex Sans.
+   LAYOUT: secciones centradas, tarjetas blancas sobre gris, una evidencia grande por sección, pie en tres columnas. */
+:root{color-scheme:light dark;
+ --bg:light-dark(#FFFFFF,#070B14);--alt:light-dark(#F1F3F4,#0B111D);--tile:light-dark(#FFFFFF,#0F1727);
+ --ink:light-dark(#0A1626,#E6EAF0);--sub:light-dark(#3A4350,#B4BECB);--mute:light-dark(#5C6570,#8C98A8);
+ --line:light-dark(#E2E6EA,#1C2638);--teal:light-dark(#137A99,#5CC8E4);
+ --cyan:#36B5D6;--navy:#0A2A4A;--console:#070D18;
+ --shadow:0 1px 2px rgba(0,0,0,.04),0 10px 30px rgba(0,0,0,.07)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html{scroll-behavior:smooth;scroll-padding-top:64px;overflow-x:clip}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;overflow-x:clip;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600;text-wrap:balance}
+h1{font-size:clamp(44px,7vw,74px);line-height:1.04;letter-spacing:-.035em}
+h2{font-size:clamp(34px,4.6vw,51px);line-height:1.06;letter-spacing:-.03em}
+h3{font-size:20px;line-height:1.25;letter-spacing:-.01em}
+p{margin:0}a{color:inherit}
+.wrap{max-width:1108px;margin:0 auto;padding:0 max(32px,4vw)}
+.c{text-align:center}
+.sec{padding:clamp(72px,9vw,112px) 0}
+.sec.alt{background:var(--alt)}
+.sub{font-size:19px;color:var(--sub);max-width:660px;margin:18px auto 0;letter-spacing:-.01em}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:500}
+.note{font-size:14px;color:var(--mute);text-align:center;margin-top:14px}
+.btns{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:34px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 24px;border-radius:980px;font:500 17px/1 inherit;font-family:inherit;text-decoration:none;cursor:pointer;border:1px solid transparent;transition:background .15s,border-color .15s}
+.btn.pri{background:var(--cyan);color:#0A1626}.btn.pri:hover{background:#56C4E0}
+.btn.gho{border-color:var(--teal);color:var(--teal);background:transparent}.btn.gho:hover{background:color-mix(in srgb,var(--teal) 8%,transparent)}
+a:focus-visible,button:focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
+
+/* Barra */
+header{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:16px;height:56px;max-width:1108px;margin:0 auto;padding:0 max(32px,4vw)}
+.logo{font:700 23px/1 "Barlow Condensed",sans-serif;letter-spacing:.01em;text-decoration:none;white-space:nowrap}
+.logo b{color:var(--cyan)}.logo span{color:light-dark(var(--navy),#fff)}
+nav.main{display:flex;gap:2px;align-items:center}
+nav.main a{font-size:14px;color:var(--sub);text-decoration:none;padding:8px 11px;border-radius:8px}
+nav.main a:hover{color:var(--ink)}
+.burger{display:none;width:44px;height:44px;border:0;background:transparent;color:var(--ink);border-radius:10px;cursor:pointer}
+.velo{display:none}
+
+/* Consola del héroe */
+.hero{padding:clamp(64px,8vw,82px) 0 clamp(80px,10vw,112px)}
+.console{margin:56px auto 0;max-width:1180px;padding:0 max(16px,2vw)}
+.frame{background:var(--console);border-radius:22px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(7,13,24,.55),0 0 0 1px rgba(255,255,255,.06);display:grid;grid-template-columns:minmax(0,1.75fr) minmax(0,1fr);color:#DCE6EF}
+.cam{position:relative;background:#02070E}
+.cam svg{display:block;width:100%;height:auto}
+.panel{text-align:left;padding:24px 24px 22px;border-left:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;gap:16px;font-size:14px}
+.panel .k{color:#7F92A6;font-size:12.5px}
+.panel .v{font-size:15px;color:#F2F6FA;white-space:nowrap}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.08)}
+.pttl{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pttl b{font-weight:600;font-size:15px;color:#fff}
+.live{display:inline-flex;align-items:center;gap:6px;color:var(--cyan);font-size:12.5px}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--cyan);animation:blink 1.6s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.hl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.hl li{display:grid;grid-template-columns:66px minmax(0,1fr);gap:10px;padding:7px 10px;border-radius:8px}
+.hl li.on{background:rgba(54,181,214,.12)}
+.hl .a{color:var(--cyan);white-space:nowrap}
+.ring{transform-origin:600px 300px;animation:go 6s linear infinite;opacity:0}
+@keyframes go{0%{transform:scale(.1);opacity:0}15%{opacity:.85}100%{transform:scale(1.7);opacity:0}}
+
+/* Tarjetas */
+.tiles{display:grid;gap:22px;margin-top:52px}
+.t3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.t2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tile{background:var(--tile);border-radius:20px;padding:40px 28px 36px;box-shadow:var(--shadow)}
+.tile.c h3{color:var(--teal);margin-bottom:10px}
+.tile p{color:var(--sub);font-size:16.5px}
+.tile.eq{padding:30px 30px 32px;display:flex;flex-direction:column;gap:14px}
+.tile.eq svg{width:100%;height:auto;max-height:200px;margin-bottom:6px;background:#F3F5F7;border-radius:14px;padding:16px}
+.tile ul{margin:6px 0 0;padding-left:20px;color:var(--sub);font-size:16px}.tile li{margin:5px 0}
+
+/* Lista numerada */
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(32px,5vw,64px);align-items:center;margin-top:56px}
+.nums{list-style:none;margin:0;padding:0;counter-reset:n}
+.nums li{counter-increment:n;display:grid;grid-template-columns:40px minmax(0,1fr);gap:14px;padding:16px 0;border-top:1px solid var(--line)}
+.nums li:first-child{border-top:0}
+.nums li::before{content:counter(n);width:32px;height:32px;border-radius:50%;background:color-mix(in srgb,var(--cyan) 16%,transparent);color:var(--teal);font-weight:600;font-size:15px;display:grid;place-items:center}
+.nums b{display:block;font-weight:600;font-size:17px}
+.nums span{color:var(--sub);font-size:16px}
+
+/* Corte de vía */
+.corte{background:#FFFFFF;border-radius:20px;box-shadow:var(--shadow);padding:18px}
+.corte svg{display:block;width:100%;height:auto}
+
+/* Ficha */
+.ficha{background:var(--tile);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
+.ficha .top{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.ficha .top b{font-weight:600}.ficha .top span{color:var(--mute);font-size:14px;white-space:nowrap}
+.datos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-bottom:1px solid var(--line)}
+.datos div{padding:12px 22px}.datos small{display:block;color:var(--mute);font-size:13px}.datos b{font-weight:600;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;padding:11px 22px;border-bottom:1px solid var(--line)}
+th{font-size:13px;color:var(--mute);font-weight:500}
+td.n{text-align:right;white-space:nowrap}tr:last-child td{border-bottom:0}
+
+/* Servicios */
+.srv{background:var(--tile);border-radius:20px;box-shadow:var(--shadow);padding:30px 28px 30px}
+.srv small{color:var(--teal);font-size:14px;font-weight:500}
+.srv h3{margin:6px 0 10px}
+.srv p{color:var(--sub);font-size:16px}
+
+/* Clientes */
+.clientes{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:40px}
+.clientes span{padding:10px 18px;border-radius:980px;background:var(--alt);color:var(--sub);font-size:16px}
+
+/* Contacto */
+.mail{font-size:clamp(22px,3vw,30px);font-weight:600;letter-spacing:-.02em;margin-top:30px;overflow-wrap:anywhere}
+.lugar{color:var(--mute);margin-top:8px;font-size:16px}
+
+/* Pie */
+footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32px;font-size:14px;color:var(--mute)}
+.cols{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:28px}
+.cols h4{margin:0 0 12px;font-size:14px;font-weight:600;color:var(--ink)}
+.cols a{display:block;text-decoration:none;color:var(--sub);padding:4px 0}.cols a:hover{color:var(--ink)}
+.legal{margin-top:40px;padding-top:20px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px}
+
+/* Aparición */
+.rv{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}
+.rv.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}.ring{animation:none;opacity:.45}.live i{animation:none}html{scroll-behavior:auto}}
+
+@media (max-width:980px){
+ .frame{grid-template-columns:minmax(0,1fr)}
+ .panel{border-left:0;border-top:1px solid rgba(255,255,255,.07)}
+ .t3{grid-template-columns:minmax(0,1fr)}
+ .split{grid-template-columns:minmax(0,1fr)}
+ .cols{grid-template-columns:1fr 1fr}
+}
+/* Celular: menú ☰ con velo */
+@media (max-width:820px){
+ .burger{display:grid;place-items:center}
+ nav.main{position:fixed;top:56px;right:0;bottom:0;width:min(300px,84vw);flex-direction:column;align-items:stretch;gap:2px;padding:14px;background:var(--bg);border-left:1px solid var(--line);transform:translateX(100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;z-index:40;overflow-y:auto}
+ nav.main a{font-size:17px;padding:13px 14px;color:var(--ink)}
+ body.menu nav.main{transform:none;visibility:visible;transition:transform .25s ease}
+ body.menu .velo{display:block;position:fixed;inset:56px 0 0;background:rgba(7,11,20,.45);z-index:35}
+ .t2{grid-template-columns:minmax(0,1fr)}
+ .datos{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:600px){
+ .wrap,.bar{padding:0 20px}
+ .tile{padding:30px 22px 28px}
+ th,td{padding:10px 14px}.datos div{padding:10px 14px}
+ .btns .btn{flex:1 1 100%}
+ .cols{grid-template-columns:1fr}
+ .hl li{grid-template-columns:60px minmax(0,1fr)}
+}
+/* Celular acostado: se resuelve por altura */
+@media (max-height:560px) and (orientation:landscape){
+ .hero{padding:36px 0 48px}h1{font-size:clamp(34px,5vw,48px)}
+ .sub{font-size:17px;margin-top:12px}.btns{margin-top:20px}
+ .console{margin-top:32px}
+ .frame{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+ .panel{border-top:0;border-left:1px solid rgba(255,255,255,.07)}
+ .sec{padding:48px 0}
+}
+</style>
+</head>
+<body>
+
+<header>
+ <div class="bar">
+  <a class="logo" href="#inicio" aria-label="HYDRO-ROV, inicio"><b>HYDRO-</b><span>ROV</span></a>
+  <nav class="main" id="menu" aria-label="Secciones">
+   <a href="#como">Cómo trabajamos</a>
+   <a href="#equipos">Equipos</a>
+   <a href="#localizacion">Localización</a>
+   <a href="#entregable">Entregable</a>
+   <a href="#servicios">Servicios</a>
+   <a href="#contacto">Contacto</a>
+  </nav>
+  <button class="burger" id="burger" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu">
+   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+ </div>
+ <div class="velo" id="velo"></div>
+</header>
+
+<main>
+<section class="hero c" id="inicio">
+ <div class="wrap">
+  <h1>La red,<br>vista por dentro.</h1>
+  <p class="sub">Inspección de redes de alcantarillado con sonda y equipo robotizado. Cada tramo grabado, ubicado y documentado antes de excavar.</p>
+  <div class="btns">
+   <a class="btn pri" href="#servicios">Ver los servicios</a>
+   <a class="btn gho" href="#contacto">Escríbanos</a>
+  </div>
+ </div>
+ <div class="console rv">
+  <div class="frame">
+   <div class="cam">
+    <svg viewBox="0 0 1200 640" role="img" aria-label="Vista de la cámara dentro de una tubería, con la lámina de agua en el fondo">
+     <defs>
+      <radialGradient id="tubo" cx="50%" cy="47%" r="62%">
+       <stop offset="0" stop-color="#010409"/><stop offset=".3" stop-color="#0A1D2E"/><stop offset=".7" stop-color="#3A586C"/><stop offset="1" stop-color="#7B93A3"/>
+      </radialGradient>
+      <linearGradient id="agua" x1="0" y1="0" x2="0" y2="1">
+       <stop offset="0" stop-color="#36B5D6" stop-opacity=".12"/><stop offset="1" stop-color="#36B5D6" stop-opacity=".55"/>
+      </linearGradient>
+      <radialGradient id="luz" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+      <clipPath id="sec"><circle cx="600" cy="300" r="440"/></clipPath>
+     </defs>
+     <rect width="1200" height="640" fill="#02070E"/>
+     <g clip-path="url(#sec)">
+      <circle cx="600" cy="300" r="440" fill="url(#tubo)"/>
+      <g fill="none" stroke="#A7C6D6" stroke-width="4">
+       <circle class="ring" cx="600" cy="300" r="300" style="animation-delay:0s"/>
+       <circle class="ring" cx="600" cy="300" r="300" style="animation-delay:-1.2s"/>
+       <circle class="ring" cx="600" cy="300" r="300" style="animation-delay:-2.4s"/>
+       <circle class="ring" cx="600" cy="300" r="300" style="animation-delay:-3.6s"/>
+       <circle class="ring" cx="600" cy="300" r="300" style="animation-delay:-4.8s"/>
+      </g>
+      <path d="M572 336 H628 L1080 760 H120 Z" fill="url(#agua)"/>
+      <path d="M572 336 H628" stroke="#7FD6EC" stroke-width="3" opacity=".6"/>
+      <ellipse cx="600" cy="480" rx="460" ry="200" fill="url(#luz)"/>
+     </g>
+     <g stroke="#36B5D6" stroke-width="3" opacity=".9"><path d="M600 266v22M600 312v22M566 300h22M612 300h22"/></g>
+     <g class="mono" font-size="22" fill="#E8F4FA">
+      <text x="34" y="50">PZ-14 → PZ-15</text>
+      <text x="1166" y="50" text-anchor="end">ABS 18,75 m</text>
+      <text x="34" y="612">Ø 250 mm · PVC</text>
+      <text x="1166" y="612" text-anchor="end">CAM 0°</text>
+     </g>
+    </svg>
+   </div>
+   <aside class="panel" aria-label="Datos del tramo">
+    <div class="pttl"><b>Tramo 07</b><span class="live"><i></i>Grabando</span></div>
+    <div class="pgrid">
+     <div><div class="k">Pozo inicial</div><div class="v mono">PZ-14</div></div>
+     <div><div class="k">Pozo final</div><div class="v mono">PZ-15</div></div>
+     <div><div class="k">Diámetro</div><div class="v mono">250 mm</div></div>
+     <div><div class="k">Material</div><div class="v mono">PVC</div></div>
+    </div>
+    <div class="k">Hallazgos registrados</div>
+    <ul class="hl">
+     <li><span class="a mono">6,20 m</span><span>Unión desplazada</span></li>
+     <li class="on"><span class="a mono">18,75 m</span><span>Sedimento en el fondo</span></li>
+     <li><span class="a mono">24,10 m</span><span>Conexión domiciliaria</span></li>
+    </ul>
+   </aside>
+  </div>
+  <p class="note">Imagen ilustrativa con un tramo ficticio.</p>
+ </div>
+</section>
+
+<section class="sec alt" id="porque">
+ <div class="wrap c">
+  <h2>Lo que no se ve, se paga después.</h2>
+  <p class="sub">Una red se instala, se tapa y se pavimenta sin que nadie la vea por dentro. Los defectos aparecen meses después, con el pavimento encima.</p>
+  <div class="tiles t3">
+   <div class="tile c rv"><h3>Antes de recibir</h3><p>Una red nueva se recibe con video y ficha de cada tramo, no solo con la prueba de estanqueidad.</p></div>
+   <div class="tile c rv"><h3>Antes de pavimentar</h3><p>Uniones desplazadas, contrapendientes o residuos de obra se corrigen cuando todavía es barato.</p></div>
+   <div class="tile c rv"><h3>Antes de excavar</h3><p>En una red antigua se excava en el punto exacto del daño, no a lo largo de toda la cuadra.</p></div>
+  </div>
+ </div>
+</section>
+
+<section class="sec" id="como">
+ <div class="wrap c">
+  <h2>Del pozo al informe.</h2>
+  <p class="sub">Entramos por los pozos de inspección existentes. No se rompe la vía para revisar la tubería.</p>
+  <div class="tiles t3">
+   <div class="tile c rv"><h3>En el pozo</h3><p>Se instala el equipo en el pozo inicial y se registran los datos del tramo: pozos, diámetro y material.</p></div>
+   <div class="tile c rv"><h3>Dentro del tubo</h3><p>La cámara recorre el tramo grabando. Cada hallazgo queda con su distancia medida desde el pozo.</p></div>
+   <div class="tile c rv"><h3>En su escritorio</h3><p>Recibe el video, la ficha de cada tramo y las recomendaciones para decidir la intervención.</p></div>
+  </div>
+ </div>
+</section>
+
+<section class="sec alt" id="equipos">
+ <div class="wrap c">
+  <h2>Dos equipos. Ningún tramo sin revisar.</h2>
+  <p class="sub">El robot cubre colectores y redes principales. La sonda llega a las acometidas y a los tramos donde el robot no entra.</p>
+  <div class="tiles t2" style="text-align:left">
+   <article class="tile eq rv">
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+     <path d="M12 94 C42 94 42 72 72 72" fill="none" stroke="#E8782A" stroke-width="5" stroke-linecap="round"/>
+     <rect x="68" y="60" width="150" height="40" rx="10" fill="#0A2A4A"/>
+     <rect x="82" y="50" width="96" height="14" rx="5" fill="#1E4C74"/>
+     <rect x="216" y="46" width="62" height="40" rx="12" fill="#0A2A4A"/>
+     <circle cx="278" cy="66" r="17" fill="#173B5E"/><circle cx="278" cy="66" r="10" fill="#36B5D6"/><circle cx="281" cy="63" r="3" fill="#fff"/>
+     <g fill="#FFE7A0"><circle cx="270" cy="49" r="3"/><circle cx="270" cy="83" r="3"/></g>
+     <g fill="#1B1F24" stroke="#64748B" stroke-width="3"><circle cx="94" cy="106" r="17"/><circle cx="143" cy="106" r="17"/><circle cx="192" cy="106" r="17"/></g>
+     <g fill="#64748B"><circle cx="94" cy="106" r="5"/><circle cx="143" cy="106" r="5"/><circle cx="192" cy="106" r="5"/></g>
+     <path d="M22 130 H310" stroke="#36B5D6" stroke-width="3" stroke-linecap="round" opacity=".45"/>
+    </svg>
+    <h3>Robot de inspección</h3>
+    <p>Vehículo con cámara orientable que avanza por dentro del tubo, controlado desde la superficie. Graba todo el recorrido y mide la distancia desde el pozo.</p>
+    <ul><li>Redes y colectores desde 200 mm (8")</li><li>Video continuo con distancia recorrida</li><li>Iluminación propia, con tubo seco o con lámina de agua</li></ul>
+   </article>
+   <article class="tile eq rv">
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+     <circle cx="80" cy="72" r="54" fill="none" stroke="#0A2A4A" stroke-width="8"/>
+     <circle cx="80" cy="72" r="40" fill="none" stroke="#E9B824" stroke-width="10"/>
+     <circle cx="80" cy="72" r="10" fill="#0A2A4A"/>
+     <path d="M80 72 L80 22 M80 72 L124 98 M80 72 L36 98" stroke="#0A2A4A" stroke-width="5"/>
+     <path d="M128 66 C172 60 192 100 238 96 C258 94 264 88 272 86" fill="none" stroke="#E9B824" stroke-width="5" stroke-linecap="round"/>
+     <rect x="268" y="76" width="34" height="20" rx="8" fill="#0A2A4A"/><circle cx="302" cy="86" r="8" fill="#36B5D6"/>
+     <g fill="none" stroke="#36B5D6" stroke-width="3" stroke-linecap="round" opacity=".7"><path d="M285 66 a14 14 0 0 1 0 -18"/><path d="M293 60 a24 24 0 0 1 0 -30"/></g>
+     <path d="M42 140 H122" stroke="#0A2A4A" stroke-width="6" stroke-linecap="round"/>
+    </svg>
+    <h3>Sonda de empuje con cámara</h3>
+    <p>Cámara en el extremo de un cable semirrígido que se empuja desde el carrete. Pasa por curvas y diámetros pequeños.</p>
+    <ul><li>Acometidas domiciliarias y tramos de difícil acceso</li><li>Emisor de 512 Hz en la cabeza de cámara</li><li>Localización y profundidad desde la superficie</li></ul>
+   </article>
+  </div>
+ </div>
+</section>
+
+<section class="sec" id="localizacion">
+ <div class="wrap">
+  <div class="c">
+   <h2>El punto exacto, marcado en la vía.</h2>
+   <p class="sub">La cabeza de cámara emite una señal de 512 Hz. Desde la superficie, el localizador la encuentra y marca dónde está el daño y a qué profundidad.</p>
+  </div>
+  <div class="split">
+   <div class="corte rv">
+    <svg viewBox="0 0 560 360" role="img" aria-label="Corte de la vía: tubería enterrada con la cámara emitiendo señal hacia el localizador en la superficie">
+     <rect x="0" y="0" width="560" height="96" fill="none"/>
+     <rect x="0" y="96" width="560" height="264" fill="#C9B79A" opacity=".35"/>
+     <rect x="0" y="86" width="560" height="14" fill="#5B6670"/>
+     <circle cx="300" cy="262" r="46" fill="#E8EEF2" stroke="#0A2A4A" stroke-width="8"/>
+     <path d="M262 288 Q300 300 338 288 L338 300 Q300 310 262 300Z" fill="#36B5D6" opacity=".55"/>
+     <rect x="282" y="252" width="36" height="20" rx="8" fill="#0A2A4A"/><circle cx="318" cy="262" r="7" fill="#36B5D6"/>
+     <g fill="none" stroke="#137A99" stroke-width="3" stroke-linecap="round">
+      <path d="M276 226 a34 34 0 0 1 48 0" opacity=".9"/><path d="M262 206 a56 56 0 0 1 76 0" opacity=".65"/><path d="M248 186 a78 78 0 0 1 104 0" opacity=".4"/>
+     </g>
+     <rect x="290" y="20" width="20" height="50" rx="4" fill="#0A2A4A"/>
+     <rect x="278" y="62" width="44" height="18" rx="5" fill="#E9B824"/>
+     <path d="M300 86 V100" stroke="#0A2A4A" stroke-width="3"/>
+     <g stroke="#0A1626" stroke-width="2" fill="none"><path d="M430 100 V216"/><path d="M422 100 H438 M422 216 H438"/></g>
+     <g font-family="IBM Plex Sans, sans-serif" font-size="16" fill="#0A1626">
+      <text x="334" y="40">Localizador</text>
+      <text x="446" y="164">Profundidad</text>
+      <text x="20" y="80">Vía</text>
+      <text x="364" y="300">Cámara</text>
+     </g>
+    </svg>
+   </div>
+   <ol class="nums">
+    <li><div><b>Se ubica el daño</b><span>La cámara se detiene en el hallazgo dentro de la tubería.</span></div></li>
+    <li><div><b>Se encuentra desde arriba</b><span>El localizador sigue la señal hasta quedar encima de la cámara.</span></div></li>
+    <li><div><b>Se mide la profundidad</b><span>El equipo indica a qué profundidad está la tubería en ese punto.</span></div></li>
+    <li><div><b>Se marca en la vía</b><span>La reparación se hace en ese punto, sin excavar a ciegas.</span></div></li>
+   </ol>
+  </div>
+ </div>
+</section>
+
+<section class="sec alt" id="entregable">
+ <div class="wrap">
+  <div class="c">
+   <h2>Qué recibe al final.</h2>
+   <p class="sub">Un entregable para tomar decisiones de obra, presupuestar una reparación o soportar el recibo de una red.</p>
+  </div>
+  <div class="split">
+   <ol class="nums rv">
+    <li><div><b>Video de cada tramo</b><span>El recorrido completo, de pozo a pozo.</span></div></li>
+    <li><div><b>Ficha por tramo</b><span>Pozos, diámetro, material, longitud y estado general.</span></div></li>
+    <li><div><b>Hallazgos ubicados</b><span>Cada uno con su distancia desde el pozo y su fotografía.</span></div></li>
+    <li><div><b>Codificación de defectos</b><span>Según la norma que exija la entidad o el cliente.</span></div></li>
+    <li><div><b>Esquema y recomendaciones</b><span>Los tramos inspeccionados y qué intervenir primero.</span></div></li>
+   </ol>
+   <figure style="margin:0" class="rv">
+    <div class="ficha">
+     <div class="top"><b>Ficha de inspección · PZ-14 → PZ-15</b><span class="mono">Tramo 07</span></div>
+     <div class="datos">
+      <div><small>Diámetro</small><b>250 mm</b></div>
+      <div><small>Material</small><b>PVC</b></div>
+      <div><small>Longitud</small><b>34,60 m</b></div>
+      <div><small>Equipo</small><b>Robot</b></div>
+     </div>
+     <div style="overflow-x:auto">
+      <table>
+       <thead><tr><th>Abscisa</th><th>Hallazgo</th><th style="text-align:right">Foto</th></tr></thead>
+       <tbody id="hallazgos"></tbody>
+      </table>
+     </div>
+    </div>
+    <figcaption class="note">Ejemplo ilustrativo del formato de entrega.</figcaption>
+   </figure>
+  </div>
+ </div>
+</section>
+
+<section class="sec" id="servicios">
+ <div class="wrap c">
+  <h2>Servicios.</h2>
+  <p class="sub">Para redes de alcantarillado sanitario, pluvial y combinado.</p>
+  <div class="tiles t3" style="text-align:left" id="lista-srv"></div>
+ </div>
+</section>
+
+<section class="sec alt" id="clientes">
+ <div class="wrap c">
+  <h2>Para quién trabajamos.</h2>
+  <p class="sub">Para quien construye, opera, recibe o supervisa redes de alcantarillado.</p>
+  <div class="clientes">
+   <span>Empresas de servicios públicos</span><span>Gobernaciones y municipios</span><span>Constructores</span><span>Interventorías</span><span>Conjuntos y edificaciones</span>
+  </div>
+ </div>
+</section>
+
+<section class="sec" id="contacto">
+ <div class="wrap c">
+  <h2>Empecemos por un tramo.</h2>
+  <p class="sub">Cuéntenos dónde está la red, cuántos tramos son y de qué diámetro. Le respondemos con el alcance y una propuesta.</p>
+  <p class="mail mono">hydrorov.co@gmail.com</p>
+  <p class="lugar">Quindío, Colombia</p>
+  <div class="btns">
+   <a class="btn pri" href="mailto:hydrorov.co@gmail.com?subject=Solicitud%20de%20inspecci%C3%B3n%20de%20redes">Escríbanos</a>
+   <button class="btn gho" id="copiar" type="button">Copiar el correo</button>
+   <a class="btn gho" id="wa" href="#" style="display:none">WhatsApp</a>
+  </div>
+ </div>
+</section>
+</main>
+
+<footer>
+ <div class="wrap">
+  <div class="cols">
+   <div><a class="logo" href="#inicio" style="padding:0"><b>HYDRO-</b><span>ROV</span></a><p style="margin-top:10px;max-width:26em">Inspección de redes con sonda y equipo robotizado.</p></div>
+   <div><h4>La empresa</h4><a href="#como">Cómo trabajamos</a><a href="#equipos">Equipos</a><a href="#localizacion">Localización</a></div>
+   <div><h4>Servicios</h4><a href="#servicios">Inspección CCTV</a><a href="#entregable">Entregable</a><a href="#clientes">Para quién</a></div>
+   <div><h4>Contacto</h4><a href="mailto:hydrorov.co@gmail.com">hydrorov.co@gmail.com</a><a href="#contacto">Solicitar inspección</a></div>
+  </div>
+  <div class="legal"><span>© <span id="anio">2026</span> HYDRO-ROV. Todos los derechos reservados.</span><span>hydro-rov.com · Quindío, Colombia</span></div>
+ </div>
+</footer>
+
+<script>
+{
+ /* CONFIGURACIÓN: número de WhatsApp con indicativo, sin espacios ni +. Ej: 573001234567. Vacío = sin botón. */
+ const WHATSAPP = '';
+
+ const servicios = [
+  ['Robot','Inspección CCTV de redes','Recorrido completo de colectores y redes desde 200 mm (8") con video continuo y distancia medida desde el pozo.'],
+  ['Sonda','Inspección de acometidas','Conexiones domiciliarias, cajas, curvas y tramos cortos o de difícil acceso donde el robot no entra.'],
+  ['Localización','Ubicación desde la superficie','Punto exacto y profundidad de un daño o de una tubería, marcados en la vía antes de excavar.'],
+  ['Recibo de obra','Verificación de redes nuevas','Uniones, alineamiento, sedimentos y contrapendientes revisados antes de recibir y pavimentar.'],
+  ['Mantenimiento','Diagnóstico de redes existentes','Fisuras, raíces, obstrucciones, conexiones erradas y colapsos identificados antes de presupuestar.'],
+  ['Catastro','Apoyo a catastro de redes','Recorrido, diámetros y conexiones entre pozos confirmados para actualizar planos y bases de datos.']
+ ];
+ document.getElementById('lista-srv').innerHTML = servicios.map(([c,t,d]) =>
+  `<div class="srv rv"><small>${c}</small><h3>${t}</h3><p>${d}</p></div>`).join('');
+
+ const hallazgos = [['6,20 m','Unión desplazada','F-01'],['18,75 m','Sedimento en el fondo','F-02'],['24,10 m','Conexión domiciliaria','F-03'],['29,40 m','Fisura longitudinal','F-04']];
+ document.getElementById('hallazgos').innerHTML = hallazgos.map(([a,h,f]) =>
+  `<tr><td class="mono" style="white-space:nowrap">${a}</td><td>${h}</td><td class="mono n">${f}</td></tr>`).join('');
+
+ /* Aparición al hacer scroll */
+ const els = document.querySelectorAll('.rv');
+ if ('IntersectionObserver' in window) {
+  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), {threshold:.12});
+  els.forEach(e => io.observe(e));
+ } else els.forEach(e => e.classList.add('in'));
+
+ /* Menú ☰ con velo */
+ const burger = document.getElementById('burger'), velo = document.getElementById('velo'), menu = document.getElementById('menu');
+ const cerrar = () => { document.body.classList.remove('menu'); burger.setAttribute('aria-expanded','false'); };
+ burger.addEventListener('click', () => burger.setAttribute('aria-expanded', document.body.classList.toggle('menu') ? 'true' : 'false'));
+ velo.addEventListener('click', cerrar);
+ menu.addEventListener('click', e => { if (e.target.closest('a')) cerrar(); });
+ document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
+
+ /* Copiar correo */
+ const cp = document.getElementById('copiar');
+ cp.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText('hydrorov.co@gmail.com'); cp.textContent = 'Correo copiado'; }
+  catch (e) { cp.textContent = 'Seleccione el correo y cópielo'; }
+  setTimeout(() => { cp.textContent = 'Copiar el correo'; }, 2500);
+ });
+
+ if (WHATSAPP) {
+  const wa = document.getElementById('wa');
+  wa.href = 'https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent('Buen día. Quisiera cotizar una inspección de redes.');
+  wa.style.display = 'inline-flex';
+ }
+ document.getElementById('anio').textContent = new Date().getFullYear();
+}
+</script>
+</body>
+</html>
