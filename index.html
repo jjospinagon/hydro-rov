@@ -73,7 +73,7 @@ nav.main a:hover{color:var(--ink)}
 .console{margin:56px auto 0;max-width:1180px;padding:0 max(16px,2vw)}
 .frame{background:var(--console);border-radius:22px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(7,13,24,.55),0 0 0 1px rgba(255,255,255,.06);display:grid;grid-template-columns:minmax(0,1.75fr) minmax(0,1fr);color:#DCE6EF}
 .cam{position:relative;background:#02070E;overflow:hidden;min-height:360px}
-.cam canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
+.cam video{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;background:#02070E}
 .hud{position:absolute;color:#E8F4FA;font-size:clamp(11px,1.35vw,15px);text-shadow:0 1px 2px rgba(0,0,0,.8);white-space:nowrap}
 .hud.tl{top:3.5%;left:3%}.hud.tr{top:3.5%;right:3%}.hud.bl{bottom:3.5%;left:3%}.hud.br{bottom:3.5%;right:3%}
 .cross{position:absolute;left:50%;top:47%;width:4.5%;min-width:26px;transform:translate(-50%,-50%);opacity:.85}
@@ -232,7 +232,7 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
  <div class="console rv">
   <div class="frame">
    <div class="cam">
-    <canvas id="tubo" role="img" aria-label="Recorrido de la cámara dentro de una tubería de concreto: uniones entre tubos, acometidas domiciliarias y lámina de agua en el fondo"></canvas>
+    <video id="vid" src="media/tramo.mp4" poster="media/tramo-poster.jpg" muted autoplay loop playsinline preload="auto" aria-label="Recorrido real de la cámara dentro de una tubería de concreto: uniones, conexiones domiciliarias, sedimento y una fisura"></video>
     <div class="hud tl mono">PZ-14 → PZ-15</div>
     <div class="hud tr mono" id="abs">ABS 0,00 m</div>
     <div class="hud bl mono">Ø 300 mm · Concreto</div>
@@ -251,7 +251,7 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
     <ul class="hl" id="hl"></ul>
    </aside>
   </div>
-  <p class="note">Imagen ilustrativa con un tramo ficticio.</p>
+  <p class="note">Video ilustrativo con un tramo ficticio.</p>
  </div>
 </section>
 
@@ -457,13 +457,14 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
  document.getElementById('lista-srv').innerHTML = servicios.map(([c,t,d]) =>
   `<div class="srv rv"><small>${c}</small><h3>${t}</h3><p>${d}</p></div>`).join('');
 
- /* Hallazgos del tramo de ejemplo (abscisa en m desde el pozo inicial) */
+ /* Hallazgos del tramo de ejemplo (abscisa en m desde el pozo inicial).
+    t = segundo del video media/tramo.mp4 en que aparece cada hallazgo. */
  const H = [
-  {a:6.20,  t:'Unión desplazada',      k:'union'},
-  {a:11.40, t:'Conexión domiciliaria', k:'aco', ang:38},
-  {a:18.75, t:'Sedimento en el fondo', k:'sed'},
-  {a:24.10, t:'Conexión domiciliaria', k:'aco', ang:146},
-  {a:29.40, t:'Fisura longitudinal',   k:'fis', ang:204}
+  {a:14.05, t:'Unión desplazada',      s:2.8},
+  {a:15.05, t:'Conexión domiciliaria', s:4.5},
+  {a:16.20, t:'Sedimento en el fondo', s:6.4},
+  {a:16.70, t:'Fisura longitudinal',   s:7.2},
+  {a:17.20, t:'Conexión domiciliaria', s:8.1}
  ];
  const fmt = v => v.toFixed(2).replace('.', ',') + ' m';
  document.getElementById('hallazgos').innerHTML = H.map((h,i) =>
@@ -472,140 +473,28 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
  hl.innerHTML = H.map(h => `<li><span class="a mono">${fmt(h.a)}</span><span>${h.t}</span></li>`).join('');
  const filas = hl.querySelectorAll('li');
 
- /* Recorrido de la cámara dentro del tubo (canvas, perspectiva real de un cilindro) */
- const cv = document.getElementById('tubo'), g = cv.getContext('2d'), absEl = document.getElementById('abs');
- const R = 0.15, LEN = 34.6, VEL = 0.85, PASO = 1.0, OFF = 0.2, ZN = 0.3, ZF = 42, AGUA = 0.72;
- let W = 0, A = 0, f = 1, ox = 0, oy = 0, cam = 0, last = 0, activo = -2, corre = false;
- const rad = d => d * Math.PI / 180;
- const luz = z => Math.min(1, 1.15 / (1 + Math.pow(z / 1.25, 1.75)));
- const P = (ang, z) => { const s = R * f / z; return [ox + Math.cos(ang) * s, oy - Math.sin(ang) * s]; };
- function medir() {
-  const d = Math.min(2, window.devicePixelRatio || 1);
-  W = Math.round(cv.clientWidth * d); A = Math.round(cv.clientHeight * d);
-  if (!W || !A) return;
-  cv.width = W; cv.height = A; ox = W / 2; oy = A * 0.47;
-  f = Math.hypot(W, A) / 2 * ZN / R * 1.02;
- }
- function anillo(z, union) {
-  const r1 = R * f / z, r2 = R * f / (z + 0.016), r0 = R * f / Math.max(z - 0.008, 0.05), I = luz(z);
-  /* borde del tubo anterior, junta oscura y espigo del siguiente */
-  g.fillStyle = `rgba(215,212,200,${0.35 * I})`;
-  g.beginPath(); g.arc(ox, oy, r0, 0, 7); g.arc(ox, oy, r1, 0, 7, true); g.fill();
-  g.fillStyle = `rgba(14,14,14,${0.45 + 0.3 * I})`;
-  g.beginPath(); g.arc(ox, oy, r1, 0, 7); g.arc(ox, oy, r2, 0, 7, true); g.fill();
-  if (union) {
-   const dx = r2 * 0.07, dy = -r2 * 0.05;
-   g.fillStyle = `rgba(0,0,0,${0.7 + 0.25 * I})`;
-   g.beginPath(); g.arc(ox, oy, r2, 0, 7); g.arc(ox + dx, oy + dy, r2 * 0.985, 0, 7, true); g.fill('evenodd');
-   g.lineWidth = Math.max(1, r2 * 0.012); g.strokeStyle = `rgba(225,222,210,${0.5 * I})`;
-   g.beginPath(); g.arc(ox + dx, oy + dy, r2 * 0.985, 0, 7); g.stroke();
-  }
- }
- function acometida(angD, z0) {
-  const a = 0.075, ang = rad(angD), pts = [];
-  for (let i = 0; i <= 28; i++) {
-   const t = i / 28 * Math.PI * 2, z = z0 + a * Math.sin(t);
-   if (z < 0.04) return;
-   pts.push(P(ang + (a / R) * Math.cos(t), z));
-  }
-  const I = luz(z0), c = P(ang, z0), r = a * f / z0;
-  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath();
-  const gr = g.createRadialGradient(c[0], c[1], 0, c[0], c[1], r * 1.2);
-  gr.addColorStop(0, '#010305'); gr.addColorStop(0.7, '#060B10'); gr.addColorStop(1, 'rgba(40,48,54,.9)');
-  g.fillStyle = gr; g.fill();
-  g.lineWidth = Math.max(1, r * 0.08); g.strokeStyle = `rgba(222,218,206,${0.55 * I})`; g.stroke();
-  /* sombra interior del ramal: se ve hacia arriba y hacia afuera */
-  const k = 0.55, cx2 = c[0] + (c[0] - ox) * 0.06, cy2 = c[1] + (c[1] - oy) * 0.06;
-  g.save(); g.clip();
-  g.fillStyle = 'rgba(0,0,0,.65)'; g.beginPath(); g.ellipse(cx2, cy2, r * k * 1.1, r * k * 0.8, Math.atan2(c[1] - oy, c[0] - ox), 0, 7); g.fill();
-  g.restore();
- }
- function fisura(angD, z1, z2) {
-  g.beginPath(); let n = 0, ini = false;
-  for (let z = z1; z <= z2; z += 0.04, n++) {
-   if (z - cam < 0.05) continue;
-   const p = P(rad(angD + 2.2 * Math.sin(n * 1.9) + n * 0.15), z - cam);
-   if (ini) g.lineTo(p[0], p[1]); else { g.moveTo(p[0], p[1]); ini = true; }
-  }
-  const zc = Math.max((z1 + z2) / 2 - cam, 0.3);
-  g.lineWidth = Math.max(1, R * f / zc * 0.012); g.strokeStyle = 'rgba(0,0,0,.75)'; g.stroke();
- }
- function plano(z, x0, x1) { const s = f / z; return [[ox + x0 * R * s, oy + AGUA * R * s], [ox + x1 * R * s, oy + AGUA * R * s]]; }
- function dibujar(t) {
-  if (!W) return;
-  g.fillStyle = '#000'; g.fillRect(0, 0, W, A);
-  /* pared del tubo, iluminada por las luces del robot */
-  for (let z = ZN * 0.95; z < ZF; z *= 1.035) {
-   const k = 0.025 + 0.975 * luz(z);
-   g.fillStyle = `rgb(${Math.round(168 * k + 3)},${Math.round(162 * k + 3)},${Math.round(148 * k + 4)})`;
-   g.beginPath(); g.arc(ox, oy, R * f / z, 0, 7); g.fill();
-  }
-  /* uniones, acometidas y fisura, de lejos a cerca */
-  const obj = [];
-  for (let p = Math.ceil(cam - OFF) + OFF; p <= Math.min(LEN, cam + ZF); p += PASO) {
-   const z = p - cam; if (z > ZN * 0.9) obj.push({z, d: () => anillo(z, Math.abs(p - 6.2) < 0.01)});
-  }
-  H.forEach(h => {
-   const z = h.a - cam;
-   if (h.k === 'aco' && z > 0.04 && z < ZF) obj.push({z, d: () => acometida(h.ang, z)});
-   if (h.k === 'fis' && z > -0.5 && z < ZF) obj.push({z, d: () => fisura(h.ang, h.a - 0.4, h.a + 0.5)});
-  });
-  obj.sort((a, b) => b.z - a.z).forEach(o => o.d());
-  /* lámina de agua en el fondo */
-  const w = Math.sqrt(1 - AGUA * AGUA), n1 = plano(ZN * 0.6, -w, w), n2 = plano(ZF, -w, w);
-  const ga = g.createLinearGradient(0, A, 0, oy);
-  ga.addColorStop(0, 'rgba(78,104,98,.95)'); ga.addColorStop(0.35, 'rgba(46,66,64,.96)'); ga.addColorStop(0.75, 'rgba(14,22,24,.98)'); ga.addColorStop(1, 'rgba(2,4,6,1)');
-  g.fillStyle = ga; g.beginPath(); g.moveTo(n1[0][0], n1[0][1]); g.lineTo(n1[1][0], n1[1][1]); g.lineTo(n2[1][0], n2[1][1]); g.lineTo(n2[0][0], n2[0][1]); g.closePath(); g.fill();
-  /* menisco: línea húmeda donde el agua toca la pared */
-  g.lineWidth = Math.max(1, A * 0.004); g.strokeStyle = 'rgba(190,200,190,.35)';
-  g.beginPath(); g.moveTo(n1[0][0], n1[0][1]); g.lineTo(n2[0][0], n2[0][1]); g.moveTo(n1[1][0], n1[1][1]); g.lineTo(n2[1][0], n2[1][1]); g.stroke();
-  /* mancha de humedad sobre la pared, justo encima del agua */
-  g.lineWidth = Math.max(2, A * 0.035); g.strokeStyle = 'rgba(40,36,28,.22)';
-  g.beginPath(); g.moveTo(n1[0][0], n1[0][1] - A * 0.02); g.lineTo(n2[0][0], n2[0][1]); g.moveTo(n1[1][0], n1[1][1] - A * 0.02); g.lineTo(n2[1][0], n2[1][1]); g.stroke();
-  /* sedimento */
-  const sz1 = 18.35 - cam, sz2 = 19.5 - cam;
-  if (sz2 > ZN * 0.6) {
-   const a1 = plano(Math.max(sz1, ZN * 0.6), -w * 0.85, w * 0.7), a2 = plano(sz2, -w * 0.6, w * 0.8);
-   const gs = g.createLinearGradient(0, a1[0][1], 0, a2[0][1]);
-   gs.addColorStop(0, `rgba(122,100,66,${0.55 * luz(Math.max(sz1, 0.4)) + 0.25})`); gs.addColorStop(1, 'rgba(60,50,34,.5)');
-   g.fillStyle = gs;
-   g.beginPath(); g.moveTo(a1[0][0], a1[0][1]); g.lineTo(a1[1][0], a1[1][1]); g.lineTo(a2[1][0], a2[1][1]); g.lineTo(a2[0][0], a2[0][1]); g.closePath(); g.fill();
-  }
-  /* reflejos del agua en movimiento */
-  for (let i = 0; i < 26; i++) {
-   const z = ((i * 0.55 - t * 0.0011) % 14 + 14) % 14 + ZN * 0.7;
-   const j = Math.sin(i * 12.9898) * 0.5 + 0.5, l = plano(z, -w * (0.15 + 0.5 * j), w * (0.05 + 0.45 * (1 - j)));
-   g.strokeStyle = `rgba(210,225,215,${0.3 * luz(z)})`; g.lineWidth = Math.max(1, R * f / z * 0.012);
-   g.beginPath(); g.moveTo(l[0][0], l[0][1]); g.lineTo(l[1][0], l[1][1]); g.stroke();
-  }
-  /* viñeta de la lente */
-  const v = g.createRadialGradient(ox, oy, Math.min(W, A) * 0.35, ox, oy, Math.hypot(W, A) * 0.55);
-  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)');
-  g.fillStyle = v; g.fillRect(0, 0, W, A);
-  /* fundido al empezar y terminar el tramo */
-  const fa = Math.max(0, 1 - cam / 0.9, (cam - (LEN - 2.2)) / 1.6);
-  if (fa > 0) { g.fillStyle = `rgba(0,0,0,${Math.min(1, fa)})`; g.fillRect(0, 0, W, A); }
-  /* datos en vivo */
-  absEl.textContent = 'ABS ' + fmt(Math.min(cam, LEN));
-  let idx = -1; H.forEach((h, i) => { if (cam >= h.a - 0.9) idx = i; });
+ /* Video del recorrido: la abscisa y el hallazgo activo siguen el tiempo del video */
+ const vid = document.getElementById('vid'), absEl = document.getElementById('abs');
+ const ABS0 = 12.36, VEL = 0.6;            /* abscisa al inicio del video y avance en m/s */
+ let activo = -2, corre = false;
+ function marcar(t) {
+  absEl.textContent = 'ABS ' + fmt(ABS0 + VEL * t);
+  let idx = -1; H.forEach((h, i) => { if (t >= h.s - 0.6) idx = i; });
   if (idx !== activo) { filas.forEach((li, i) => li.classList.toggle('on', i === idx)); activo = idx; }
  }
- function cuadro(t) {
-  if (!corre) return;
-  const dt = last ? Math.min(0.05, (t - last) / 1000) : 0; last = t;
-  cam += VEL * dt; if (cam > LEN - 0.6) cam = 0;
-  dibujar(t); requestAnimationFrame(cuadro);
- }
+ function cuadro() { if (!corre) return; marcar(vid.currentTime || 0); requestAnimationFrame(cuadro); }
  const quieto = matchMedia('(prefers-reduced-motion: reduce)').matches;
- medir();
- if ('ResizeObserver' in window) new ResizeObserver(() => { medir(); if (!corre) dibujar(0); }).observe(cv);
- if (quieto) { cam = 9.6; dibujar(0); }
- else if ('IntersectionObserver' in window) {
-  new IntersectionObserver(es => es.forEach(e => {
-   if (e.isIntersecting && !corre) { corre = true; last = 0; requestAnimationFrame(cuadro); }
-   else if (!e.isIntersecting) corre = false;
-  })).observe(cv);
- } else { corre = true; requestAnimationFrame(cuadro); }
+ if (quieto) { vid.removeAttribute('autoplay'); vid.pause(); marcar(4.4); }
+ else {
+  vid.addEventListener('playing', () => { if (!corre) { corre = true; requestAnimationFrame(cuadro); } });
+  vid.addEventListener('pause', () => { corre = false; });
+  if ('IntersectionObserver' in window) {
+   new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { const p = vid.play(); if (p && p.catch) p.catch(() => marcar(4.4)); } else vid.pause();
+   })).observe(vid);
+  }
+  marcar(0);
+ }
 
 
  /* Vista Día / Noche: respeta la del sistema y recuerda la elegida */
