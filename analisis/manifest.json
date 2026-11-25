@@ -1,0 +1,16 @@
+{
+  "name": "HYDRO-ROV · Análisis de inspección",
+  "short_name": "HYDRO-ROV",
+  "description": "Informes de inspección CCTV de redes de alcantarillado.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "lang": "es-CO",
+  "icons": [
+    {"src": "icono-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icono-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
