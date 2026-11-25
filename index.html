@@ -48,14 +48,18 @@ p{margin:0}a{color:inherit}
 a:focus-visible,button:focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
 
 /* Barra */
-header{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid var(--line)}
-.bar{display:flex;align-items:center;justify-content:space-between;gap:16px;height:56px;max-width:1108px;margin:0 auto;padding:0 max(32px,4vw)}
+header{position:sticky;top:0;z-index:30;border-bottom:1px solid var(--line)}
+/* el vidrio esmerilado va en una capa aparte: un backdrop-filter en el propio header encierra el menú ☰ (position:fixed) dentro de los 56 px de la barra y no se ve */
+header::before{content:"";position:absolute;inset:0;z-index:-1;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px)}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:16px;height:56px;max-width:1280px;margin:0 auto;padding:0 max(32px,4vw)}
 .logo{font:700 23px/1 "Barlow Condensed",sans-serif;letter-spacing:.01em;text-decoration:none;white-space:nowrap}
 .logo b{color:var(--cyan)}.logo span{color:light-dark(var(--navy),#fff)}
-nav.main{display:flex;gap:2px;align-items:center}
-nav.main a{font-size:14px;color:var(--sub);text-decoration:none;padding:8px 11px;border-radius:8px;white-space:nowrap}
-@media (max-width:1240px) and (min-width:1041px){nav.main a{padding:8px 7px;font-size:13.5px}.modo button span{display:none}.modo button{padding:0 10px}}
-nav.main a:hover{color:var(--ink)}
+nav.main{display:flex;gap:6px;align-items:center}
+/* cada sección es un botón (píldora); nunca se encogen ni se montan: si no caben, la barra pasa al menú ☰ */
+nav.main a{flex:none;font-size:13.5px;font-weight:500;color:var(--sub);text-decoration:none;height:34px;padding:0 13px;display:inline-flex;align-items:center;border-radius:980px;border:1px solid var(--line);background:var(--tile);white-space:nowrap;transition:color .15s,border-color .15s,background .15s}
+nav.main a:hover{color:var(--ink);border-color:color-mix(in srgb,var(--teal) 55%,var(--line));background:color-mix(in srgb,var(--cyan) 7%,var(--tile))}
+/* Día/Noche solo con ícono: deja el espacio a las secciones */
+.modo button span{display:none}.modo button{padding:0 10px}
 .burger{display:none;width:44px;height:44px;border:0;background:transparent;color:var(--ink);border-radius:10px;cursor:pointer}
 .velo{display:none}
 
@@ -190,11 +194,17 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
 /* Celular y tableta: menú ☰ con velo (por debajo de 1040 px el menú completo no cabe junto al botón Verificar) */
 @media (max-width:1040px){
  .burger{display:grid;place-items:center}
- nav.main{position:fixed;top:56px;right:0;bottom:0;width:min(300px,84vw);flex-direction:column;align-items:stretch;gap:2px;padding:14px;background:var(--bg);border-left:1px solid var(--line);transform:translateX(100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;z-index:40;overflow-y:auto}
- nav.main a{font-size:17px;padding:13px 14px;color:var(--ink)}
+ nav.main{position:fixed;top:56px;right:0;bottom:0;width:min(300px,84vw);flex-direction:column;align-items:stretch;gap:8px;padding:16px;background:var(--bg);border-left:1px solid var(--line);transform:translateX(100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;z-index:40;overflow-y:auto}
+ nav.main a{font-size:16.5px;height:48px;padding:0 18px;color:var(--ink);border-radius:14px}
  body.menu nav.main{transform:none;visibility:visible;transition:transform .25s ease}
  body.menu .velo{display:block;position:fixed;inset:56px 0 0;background:rgba(7,11,20,.45);z-index:35}
 }
+/* también cuando el menú completo no cabe (zoom del navegador, fuentes grandes): lo decide el script */
+ body.estrecho .burger{display:grid;place-items:center}
+ body.estrecho nav.main{position:fixed;top:56px;right:0;bottom:0;width:min(300px,84vw);flex-direction:column;align-items:stretch;gap:8px;padding:16px;background:var(--bg);border-left:1px solid var(--line);transform:translateX(100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;z-index:40;overflow-y:auto}
+ body.estrecho nav.main a{font-size:16.5px;height:48px;padding:0 18px;color:var(--ink);border-radius:14px}
+ body.estrecho.menu nav.main{transform:none;visibility:visible;transition:transform .25s ease}
+ body.estrecho.menu .velo{display:block;position:fixed;inset:56px 0 0;background:rgba(7,11,20,.45);z-index:35}
 @media (max-width:820px){
  .t2{grid-template-columns:minmax(0,1fr)}
  .datos{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -216,6 +226,7 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
  .panel{border-top:0;border-left:1px solid rgba(255,255,255,.07)}
  .cam{aspect-ratio:auto;min-height:240px}
  .sec{padding:48px 0}
+ nav.main{gap:6px;padding:10px 14px}nav.main a{height:40px;font-size:15.5px}
 }
 </style>
 </head>
@@ -235,8 +246,8 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
   <div class="right">
   <a class="verif" href="analisis/v/" target="_blank" rel="noopener" title="Comprobar la autenticidad de un informe emitido por HYDRO-ROV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><span>Verificar <span class="vl">informe</span></span></a>
   <div class="modo" role="group" aria-label="Vista de la página">
-   <button type="button" data-m="light" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span>Día</span></button>
-   <button type="button" data-m="dark" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><span>Noche</span></button>
+   <button type="button" data-m="light" aria-pressed="true" aria-label="Vista de día" title="Día"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span>Día</span></button>
+   <button type="button" data-m="dark" aria-pressed="false" aria-label="Vista de noche" title="Noche"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><span>Noche</span></button>
   </div>
   <button class="burger" id="burger" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu">
    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
@@ -560,6 +571,14 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
   const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), {threshold:.12});
   els.forEach(e => io.observe(e));
  } else els.forEach(e => e.classList.add('in'));
+
+ /* Si las secciones no caben en la barra (zoom, fuentes, ancho intermedio), pasa al menú ☰ en vez de montarse */
+ const barra = document.querySelector('.bar'), navm = document.getElementById('menu');
+ const ajustarBarra = () => {
+  document.body.classList.remove('estrecho');
+  if (innerWidth > 1040 && (navm.scrollWidth > navm.clientWidth + 1 || barra.scrollWidth > barra.clientWidth + 1)) document.body.classList.add('estrecho');
+ };
+ ajustarBarra(); addEventListener('resize', ajustarBarra); if (document.fonts) document.fonts.ready.then(ajustarBarra);
 
  /* Menú ☰ con velo */
  const burger = document.getElementById('burger'), velo = document.getElementById('velo'), menu = document.getElementById('menu');
