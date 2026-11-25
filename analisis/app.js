@@ -17,6 +17,30 @@ const pT = (t) => { t = String(t || '').trim(); if (!t) return null; const p = t
 const fFecha = (iso) => { if (!iso) return ''; const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(iso + 'T12:00:00') : new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }); };
 const hace = (iso) => { const d = (Date.now() - new Date(iso)) / 1000; if (!(d >= 0)) return ''; if (d < 60) return 'hace un momento'; if (d < 3600) return 'hace ' + Math.floor(d / 60) + ' min'; if (d < 86400) return 'hace ' + Math.floor(d / 3600) + ' h'; return fFecha(iso); };
 
+/* ============================================================ coordenadas en grados, minutos y segundos */
+/* Acepta 75°14'36", 75 14 36, 75°14'36.5"W, -75.2433, 4,5339 … Devuelve {v: valor absoluto en grados decimales, h: hemisferio escrito o null}. */
+function leerGMS(txt) {
+  let t = String(txt || '').trim().toUpperCase().replace(/[′’´`]/g, "'").replace(/[″”]|''/g, '"').replace(/º/g, '°');
+  if (!t) return null;
+  const hm = /([NSEWO])\s*$/.exec(t) || /^\s*([NSEWO])/.exec(t); const h = hm ? hm[1] : null;
+  const neg = /^\s*-/.test(t);
+  t = t.replace(/[NSEWO]/g, ' ').replace(/^\s*-/, '');
+  const nums = (t.match(/\d+(?:[.,]\d+)?/g) || []).map((x) => Number(x.replace(',', '.')));
+  if (!nums.length || nums.length > 3 || nums.some(isNaN)) return null;
+  const [g, m = 0, sg = 0] = nums;
+  if (nums.length > 1 && (m >= 60 || sg >= 60 || g % 1)) return null;
+  return { v: g + m / 60 + sg / 3600, h: h || (neg ? '-' : null) };
+}
+function aGMS(dec, tipo, sinHemi) {
+  if (dec == null || dec === '' || isNaN(dec)) return '';
+  const a = Math.abs(Number(dec)); let g = Math.floor(a), m = Math.floor((a - g) * 60), sg = Math.round(((a - g) * 60 - m) * 600) / 10;
+  if (sg >= 60) { sg = 0; m++; } if (m >= 60) { m = 0; g++; }
+  const h = tipo === 'lat' ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'O' : 'E');
+  return `${g}°${String(m).padStart(2, '0')}'${sg.toFixed(1).padStart(4, '0').replace('.', ',')}"` + (sinHemi ? '' : ' ' + h);
+}
+const camOk = (c) => !!(c && c.lat != null && c.lon != null && !isNaN(c.lat) && !isNaN(c.lon));
+const camTxt = (c) => (camOk(c) ? aGMS(c.lat, 'lat') + '  ' + aGMS(c.lon, 'lon') : '');
+
 /* ============================================================ catálogo */
 const GRADOS = [
   { g: 0, n: 'Sin grado', c: '#6b7890' }, { g: 1, n: 'Muy leve', c: '#3aa76d' }, { g: 2, n: 'Leve', c: '#94c140' },
@@ -49,7 +73,7 @@ const TR = [
   { k: 'profIni', l: 'Profundidad pozo inicial (m)', t: 'num' }, { k: 'profFin', l: 'Profundidad pozo final (m)', t: 'num' },
   { k: 'fecha', l: 'Fecha de inspección', t: 'date' },
   { k: 'condicion', l: 'Condición general (criterio del inspector)', t: 'sel', o: ['', 'Buena', 'Regular', 'Mala', 'Crítica', 'No evaluada'] },
-  { k: 'ubicacion', l: 'Ubicación o dirección', w: 'w2' }, { k: 'coord', l: 'Coordenadas (latitud, longitud)', w: 'w2', gps: true },
+  { k: 'ubicacion', l: 'Ubicación o dirección', w: 'w4' },
   { k: 'finAnticipado', l: 'Motivo de fin anticipado (si no se completó)', w: 'w4' },
   { k: 'conclusion', l: 'Conclusión del tramo', t: 'area', w: 'w4' }, { k: 'recomendacion', l: 'Recomendación para el tramo', t: 'area', w: 'w4' }];
 
@@ -57,7 +81,7 @@ const TR = [
 const S = { token: null, user: null, recordar: false, informes: [], inf: null, carpeta: null, tab: 'general', tramoSel: null,
   fotos: {}, cola: [], subiendoFotos: false, dirty: false, guardando: false, otra: false, timer: null,
   videos: {}, subidasVideo: {}, filtro: '', q: '', clavePrevia: null, focoObs: null };
-window.HR = { S, C, GRADOS, CATALOGO, COD, ESTADOS, fmtT, nf, fFecha, esc, perfilSVG: null, api: null, toast: null, asegurarFotos: null, progreso: null };
+window.HR = { S, C, GRADOS, CATALOGO, COD, ESTADOS, fmtT, nf, fFecha, esc, aGMS, camOk, camTxt, perfilSVG: null, api: null, toast: null, asegurarFotos: null, progreso: null };
 
 /* ============================================================ avisos, modal, progreso */
 function toast(html, tipo = '', ms = 4200) {
@@ -132,7 +156,7 @@ function mostrarLogin(msg) {
   $$('.paso').forEach((p) => p.classList.toggle('on', p.id === 'paso-login'));
   $('#l-msg').textContent = msg || ''; $('#l-msg').className = 'msg' + (msg ? ' err' : '');
   if (!C.API) { $('#l-msg').textContent = 'El servidor aún no está conectado. Falta publicar el servidor y pegar su dirección en config.js.'; $('#l-msg').className = 'msg err'; }
-  hud(); setTimeout(() => $('#l-email').focus(), 50);
+  hud(); setTimeout(() => { if (!$('#f-login').contains(document.activeElement)) $('#l-email').focus(); }, 50);
 }
 function mostrarCambio() {
   $('#boot').classList.add('hide'); $('#app').classList.add('hide'); $('#login').classList.remove('hide');
@@ -140,7 +164,7 @@ function mostrarCambio() {
   $('#c-quien').textContent = (S.user ? S.user.nombre + ' · ' : '') + 'por seguridad, la clave inicial se reemplaza en el primer ingreso.';
   $('#c-user').value = S.user ? S.user.email : '';
   $('#c-actual-w').classList.toggle('hide', !!S.clavePrevia);
-  hud(); reglas(); setTimeout(() => (S.clavePrevia ? $('#c-nueva') : $('#c-actual')).focus(), 50);
+  hud(); reglas(); setTimeout(() => { if (!$('#f-cambio').contains(document.activeElement)) (S.clavePrevia ? $('#c-nueva') : $('#c-actual')).focus(); }, 50);
 }
 function reglas() {
   const a = $('#c-nueva').value, b = $('#c-nueva2').value;
@@ -249,9 +273,12 @@ async function cargarLista() {
 }
 function pintarLista() {
   const I = S.informes, q = S.q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  const tramos = I.reduce((a, x) => a + (x.tramos || 0), 0);
-  $('#kpis').innerHTML = [['Informes', I.length], ['En borrador', I.filter((x) => x.estado === 'BORRADOR').length], ['Emitidos', I.filter((x) => x.estado === 'EMITIDO').length], ['Tramos registrados', tramos]]
-    .map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
+  const tramos = I.reduce((a, x) => a + (x.tramos || 0), 0), ml = I.reduce((a, x) => a + (Number(x.ml) || 0), 0), sitios = I.filter((x) => x.lat != null).length;
+  $('#kpis').innerHTML = `<div class="kpi kpi-ml"><div class="l">ML inspeccionados</div><div class="v">${nf(ml, ml >= 1000 ? 0 : 1)}<small> m</small></div><div class="s">metros lineales de tubería recorridos</div></div>`
+    + [['Informes', I.length], ['Emitidos', I.filter((x) => x.estado === 'EMITIDO').length], ['En borrador', I.filter((x) => x.estado === 'BORRADOR').length], ['Tramos', tramos]]
+      .map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('')
+    + `<button type="button" class="kpi kpi-mapa" data-vista-l="mapa"><div class="l">Mapa de inspecciones</div><div class="v">${sitios}<small> sitio${sitios === 1 ? '' : 's'}</small></div><div class="s">${ico('gps')}Ver en el mapa</div></button>`;
+  if (S.vistaLista === 'mapa') pintarMapaGlobal();
   const F = I.filter((x) => (!S.filtro || x.estado === S.filtro) && (!q || [x.id, x.titulo, x.cliente, x.municipio].join(' ').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(q)));
   if (!I.length) {
     $('#lista').innerHTML = `<div class="vacio" style="grid-column:1/-1"><h3>Aún no hay informes</h3><p>Cree el primero: cargue el video del tramo, capture los hallazgos y exporte el informe.</p>${esLector() ? '' : '<p style="margin-top:14px"><button class="btn pri" data-accion="nuevo">' + ico('mas') + 'Nuevo informe</button></p>'}</div>`;
@@ -262,7 +289,7 @@ function pintarLista() {
     <div class="ph">${x.portada ? `<img data-fid="${esc(x.portada)}" alt="">` : '<div class="rg"><span style="width:60px;height:60px"></span><span style="width:110px;height:110px"></span><span style="width:170px;height:170px"></span></div>'}
       <span class="cod">${esc(x.id)}</span><span class="est est ${esc(x.estado)}">${esc(ESTADOS[x.estado] || x.estado)}</span></div>
     <div class="bd"><h3>${esc(x.titulo)}</h3><div class="me">${esc([x.cliente, x.municipio].filter(Boolean).join(' · ') || 'Sin cliente')}${x.fecha ? ' · ' + esc(fFecha(x.fecha)) : ''}</div>
-      <div class="me">${x.tramos || 0} tramo${x.tramos === 1 ? '' : 's'} · ${x.obs || 0} observaci${x.obs === 1 ? 'ón' : 'ones'}</div>
+      <div class="me">${x.tramos || 0} tramo${x.tramos === 1 ? '' : 's'} · <b style="color:var(--tx)">${nf(x.ml || 0, 1)} m</b> inspeccionados · ${x.obs || 0} hallazgo${x.obs === 1 ? '' : 's'}${x.lat != null ? ' · ' + ico('gps', 'i mini') : ''}</div>
       <div class="ft"><span class="gbar" title="Grado máximo registrado">${[1, 2, 3, 4, 5].map((g) => `<i style="${g <= (x.gradoMax || 0) ? 'background:' + GRADOS[x.gradoMax].c : ''}"></i>`).join('')}</span>
         <span>${esc(hace(x.actualizado))}${x.actualizadoPor ? ' · ' + esc(x.actualizadoPor.split('@')[0]) : ''}</span>
         <button type="button" class="btn xs fant peligro solo-editor" data-accion="eliminar" data-id="${esc(x.id)}" title="Eliminar informe">${ico('basura')}</button></div></div></article>`).join('');
@@ -297,7 +324,7 @@ function migrarFirmas(I) {
 }
 function nuevoTramo(n) {
   return { id: uid('t'), pozoIni: '', pozoFin: '', sentido: 'Aguas abajo', red: 'Sanitaria', material: '', diametro: null, longitud: null, inspeccionada: null,
-    profIni: null, profFin: null, fecha: hoy(), condicion: '', ubicacion: '', coord: '', finAnticipado: '', conclusion: '', recomendacion: '', video: null, obs: [] };
+    profIni: null, profFin: null, fecha: hoy(), condicion: '', ubicacion: '', cIni: null, cFin: null, finAnticipado: '', conclusion: '', recomendacion: '', video: null, obs: [] };
 }
 async function nuevoInforme() {
   if (esLector()) return;
@@ -324,7 +351,10 @@ async function abrirInforme(id, tab) {
     try { const r = await apiOk('obtener', { id }); S.inf = r.informe; S.carpeta = r.carpeta; }
     catch (e) { toast(esc(e.message), 'err'); location.hash = 'informes'; return; }
     if (!S.inf.tramos.length) S.inf.tramos.push(nuevoTramo());
-    S.inf.tramos.forEach((t) => { t.obs = t.obs || []; });
+    S.inf.tramos.forEach((t) => {
+      t.obs = t.obs || [];
+      if (!t.cIni && t.coord) { const m = /(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/.exec(t.coord); if (m) t.cIni = { lat: +m[1], lon: +m[2] }; }
+    });
     migrarFirmas(S.inf);
     S.tramoSel = S.inf.tramos[0].id; S.dirty = false; setSync('ok', 'Guardado');
     pintarEditor();
@@ -360,6 +390,7 @@ function setTab(t, sinHash) {
   $$('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
   $$('#v-editor .panel').forEach((p) => p.classList.toggle('on', p.id === 'p-' + t));
   if (t === 'vista') pintarVista();
+  if (t === 'general' && mapaU) setTimeout(() => mapaU.invalidateSize(), 60);
   if (t === 'tramos') pintarPerfil();
   if (!sinHash) history.replaceState(null, '', '#informe/' + S.inf.id + '/' + t);
 }
@@ -381,7 +412,9 @@ function pintarGeneral() {
   $('#p-general').innerHTML = `<div class="card"><h3><span class="n">01</span>Identificación del trabajo</h3><div class="frm">${GEN.slice(0, 10).map((d) => campo(d, g[d.k], 'g')).join('')}</div></div>
     <div class="card"><h3><span class="n">02</span>Equipo, personal y condiciones</h3><div class="frm">${GEN.slice(10).map((d) => campo(d, g[d.k], 'g')).join('')}</div></div>
     <div class="card"><h3><span class="n">03</span>Alcance y metodología</h3><div class="frm">
-      <label class="campo w4"><span>Alcance de la inspección y metodología empleada</span><textarea data-b="i:alcance" rows="5" placeholder="Describa qué se inspeccionó, con qué procedimiento y bajo qué criterio de calificación de defectos.">${esc(S.inf.alcance || '')}</textarea></label></div></div>`;
+      <label class="campo w4"><span>Alcance de la inspección y metodología empleada</span><textarea data-b="i:alcance" rows="5" placeholder="Describa qué se inspeccionó, con qué procedimiento y bajo qué criterio de calificación de defectos.">${esc(S.inf.alcance || '')}</textarea></label></div></div>
+    ${ubicacionHTML()}`;
+  montarUbicacion();
 }
 function pintarConclusiones() {
   $('#p-conclusiones').innerHTML = `<div class="card"><h3><span class="n">01</span>Conclusiones generales</h3><div class="frm">
@@ -428,12 +461,13 @@ function pintarTramos() {
       <button type="button" class="btn sm" data-ta="fotos">${ico('foto')}Fotos</button>
       <button type="button" class="btn sm" data-ta="sinfoto">${ico('mas')}Observación</button></span></h3>
       <div class="obs-l" id="obs-l"></div></div>
+    ${camarasHTML(t)}
     <div class="card"><h3><span class="n">FT</span>Ficha técnica del tramo <span class="der solo-ed">
       <button type="button" class="btn sm" data-ta="duplicar" title="Duplicar ficha para el tramo siguiente">${ico('dup')}<span class="tx">Siguiente tramo</span></button>
       <button type="button" class="btn sm peligro" data-ta="borrar">${ico('basura')}<span class="tx">Eliminar</span></button></span></h3>
       <div class="frm">${TR.map((d) => campo(d, t[d.k], 't')).join('')}</div></div>
   </div></div>`;
-  pintarListaTramos(); pintarObs(); pintarPerfil(); montarVideo(t); bloquearLector();
+  pintarListaTramos(); pintarObs(); pintarPerfil(); montarVideo(t); montarMapaTramo(t); bloquearLector();
 }
 
 /* ------------------------------------------------------------ consola de video */
@@ -803,8 +837,8 @@ $('#p-tramos').addEventListener('click', async (e) => {
   if (!ta) return;
   e.preventDefault();
   const t = tramoActual(), a = ta.dataset.ta;
-  if (a === 'nuevo') { const n = nuevoTramo(); const u = S.inf.tramos[S.inf.tramos.length - 1]; if (u) Object.assign(n, { pozoIni: u.pozoFin, red: u.red, material: u.material, diametro: u.diametro, sentido: u.sentido }); S.inf.tramos.push(n); S.tramoSel = n.id; pintarTramos(); marcarSucio(); }
-  else if (a === 'duplicar') { const n = nuevoTramo(); Object.assign(n, { pozoIni: t.pozoFin, red: t.red, material: t.material, diametro: t.diametro, sentido: t.sentido, ubicacion: t.ubicacion }); S.inf.tramos.splice(S.inf.tramos.indexOf(t) + 1, 0, n); S.tramoSel = n.id; pintarTramos(); marcarSucio(); toast('Nuevo tramo con la ficha del anterior. Ajuste el pozo final y la longitud.'); }
+  if (a === 'nuevo') { const n = nuevoTramo(); const u = S.inf.tramos[S.inf.tramos.length - 1]; if (u) Object.assign(n, { pozoIni: u.pozoFin, cIni: camOk(u.cFin) ? Object.assign({}, u.cFin) : null, red: u.red, material: u.material, diametro: u.diametro, sentido: u.sentido }); S.inf.tramos.push(n); S.tramoSel = n.id; pintarTramos(); marcarSucio(); }
+  else if (a === 'duplicar') { const n = nuevoTramo(); Object.assign(n, { pozoIni: t.pozoFin, cIni: camOk(t.cFin) ? Object.assign({}, t.cFin) : null, red: t.red, material: t.material, diametro: t.diametro, sentido: t.sentido, ubicacion: t.ubicacion }); S.inf.tramos.splice(S.inf.tramos.indexOf(t) + 1, 0, n); S.tramoSel = n.id; pintarTramos(); marcarSucio(); toast('Nuevo tramo con la ficha del anterior. Ajuste el pozo final y la longitud.'); }
   else if (a === 'borrar') {
     if (S.inf.tramos.length < 2) { toast('El informe necesita al menos un tramo.'); return; }
     if (!(await confirmar('Eliminar tramo', `Se retira el tramo <b>${esc(etiquetaTramo(t))}</b> con sus ${t.obs.length} observaciones. Las fotos y el video siguen en la carpeta de Drive.`, 'Eliminar tramo', true))) return;
@@ -836,6 +870,87 @@ document.getElementById('f-fotos').addEventListener('change', async (e) => {
   cargarFotos(fs);
 });
 
+
+
+/* ------------------------------------------------------------ cámaras (pozos) del tramo: coordenadas GMS y mapa */
+let mapaT = null, camModo = null;
+function camBloque(t, k) {
+  const c = t[k] || {}, nom = k === 'cIni' ? (t.pozoIni || 'Cámara inicial') : (t.pozoFin || 'Cámara final');
+  const hla = c.lat != null && c.lat < 0 ? 'S' : 'N', hlo = c.lon != null && c.lon > 0 ? 'E' : 'O';
+  return `<div class="cam" data-cam="${k}"><div class="cam-t"><span class="cam-p ${k}">${k === 'cIni' ? 'A' : 'B'}</span><b>${esc(nom)}</b><span class="ayuda" style="margin:0">${k === 'cIni' ? 'cámara inicial' : 'cámara final'}</span></div>
+    <div class="cam-f"><label><span>Latitud</span><div class="gms"><input class="mono" data-cc="lat" value="${esc(aGMS(c.lat, 'lat', true))}" placeholder="4°32'02&quot;" autocomplete="off"><select data-ch="lat"><option${hla === 'N' ? ' selected' : ''}>N</option><option${hla === 'S' ? ' selected' : ''}>S</option></select></div></label>
+      <label><span>Longitud</span><div class="gms"><input class="mono" data-cc="lon" value="${esc(aGMS(c.lon, 'lon', true))}" placeholder="75°14'36&quot;" autocomplete="off"><select data-ch="lon"><option value="O"${hlo === 'O' ? ' selected' : ''}>O</option><option value="E"${hlo === 'E' ? ' selected' : ''}>E</option></select></div></label></div>
+    <div class="cam-d mono" data-cd>${camOk(c) ? c.lat.toFixed(6) + ', ' + c.lon.toFixed(6) : 'sin coordenadas'}</div>
+    <div class="cam-b solo-ed"><button type="button" class="btn xs" data-ca="gps">${ico('gps')}GPS aquí</button><button type="button" class="btn xs" data-ca="mapa">${ico('lapiz')}Marcar en el mapa</button>${camOk(c) ? '<button type="button" class="btn xs fant" data-ca="quitar">' + ico('x') + 'Quitar</button>' : ''}</div></div>`;
+}
+function camarasHTML(t) {
+  return `<div class="card" id="camaras"><h3><span class="n">CÁM</span>Ubicación de las cámaras y del tramo</h3>
+    <p class="ayuda">Escriba las coordenadas en grados, minutos y segundos, por ejemplo <b class="mono">75°14'36"</b> o <b class="mono">75 14 36</b> (también sirve en decimales). Con ambas cámaras el tramo se dibuja en el mapa y sale en el informe.</p>
+    <div class="cams">${camBloque(t, 'cIni')}${camBloque(t, 'cFin')}</div>
+    <div class="mapa-t" id="mapa-t"></div><div class="ayuda" id="cam-modo" style="margin:8px 0 12px"></div></div>`;
+}
+const iconoCam = (letra, nom) => L.divIcon({ className: '', iconSize: [0, 0], iconAnchor: [0, 0],
+  html: `<div class="camk"><span class="camk-n">${esc(nom)}</span><span class="camk-p">${letra}</span></div>` });
+async function montarMapaTramo(t) {
+  const box = $('#mapa-t'); if (!box) return;
+  try { await cargarLeaflet(); } catch (e) { box.innerHTML = '<div class="vacio">' + esc(e.message) + '</div>'; return; }
+  if (!document.body.contains(box) || tramoActual() !== t) return;
+  if (mapaT) { try { mapaT.remove(); } catch (e) { /* nada */ } }
+  mapaT = L.map(box, { zoomControl: true }); capaOSM(mapaT); mapaT._capa = L.layerGroup().addTo(mapaT);
+  mapaT.on('click', (e) => { if (camModo && !esLector()) { fijarCam(t, camModo, e.latlng.lat, e.latlng.lng); camModo = null; $('#cam-modo').textContent = ''; } });
+  dibujarTramo(t, true);
+}
+function dibujarTramo(t, encuadrar) {
+  if (!mapaT) return;
+  const cap = mapaT._capa; cap.clearLayers();
+  const a = camOk(t.cIni) ? [t.cIni.lat, t.cIni.lon] : null, b = camOk(t.cFin) ? [t.cFin.lat, t.cFin.lon] : null;
+  S.inf.tramos.forEach((o) => { if (o !== t && camOk(o.cIni) && camOk(o.cFin)) L.polyline([[o.cIni.lat, o.cIni.lon], [o.cFin.lat, o.cFin.lon]], { color: '#7d8aa0', weight: 4, opacity: 0.8 }).bindTooltip(esc(etiquetaTramo(o))).addTo(cap); });
+  if (a && b) { L.polyline([a, b], { color: '#0A2A4A', weight: 11, opacity: 0.9 }).addTo(cap); L.polyline([a, b], { color: '#36B5D6', weight: 6 }).bindTooltip(esc(etiquetaTramo(t))).addTo(cap); }
+  [[a, 'cIni', 'A', t.pozoIni || 'Inicial'], [b, 'cFin', 'B', t.pozoFin || 'Final']].forEach(([p, k, l, n]) => {
+    if (!p) return;
+    const mk = L.marker(p, { icon: iconoCam(l, n), draggable: !esLector() }).addTo(cap);
+    mk.on('dragend', () => { const q = mk.getLatLng(); fijarCam(t, k, q.lat, q.lng, true); });
+  });
+  if (encuadrar) {
+    setTimeout(() => {
+      mapaT.invalidateSize();
+      if (a && b) mapaT.fitBounds([a, b], { padding: [50, 50], maxZoom: 19 }); else if (a || b) mapaT.setView(a || b, 18);
+      else { const g = S.inf.general; mapaT.setView(g.lat != null ? [g.lat, g.lon] : [4.53, -75.68], g.lat != null ? 17 : 9); }
+    }, 80);
+  }
+}
+function fijarCam(t, k, lat, lon, sinEncuadre) {
+  t[k] = { lat: Math.round(lat * 1e6) / 1e6, lon: Math.round(lon * 1e6) / 1e6 };
+  const blk = $(`.cam[data-cam="${k}"]`); if (blk) blk.outerHTML = camBloque(t, k);
+  dibujarTramo(t, !sinEncuadre); marcarSucio();
+}
+$('#p-tramos').addEventListener('change', (e) => {
+  const el = e.target.closest('[data-cc],[data-ch]'); if (!el || esLector()) return;
+  const blk = el.closest('[data-cam]'), k = blk.dataset.cam, t = tramoActual(), tipo = el.dataset.cc || el.dataset.ch;
+  const inp = blk.querySelector(`[data-cc="${tipo}"]`), sel = blk.querySelector(`[data-ch="${tipo}"]`);
+  const r = leerGMS(inp.value);
+  if (!inp.value.trim()) { if (t[k]) { t[k][tipo] = null; if (t[k].lat == null && t[k].lon == null) t[k] = null; } blk.querySelector('[data-cd]').textContent = 'sin coordenadas'; dibujarTramo(t, false); marcarSucio(); return; }
+  if (!r || (tipo === 'lat' && r.v > 90) || (tipo === 'lon' && r.v > 180)) { inp.classList.add('mal'); blk.querySelector('[data-cd]').textContent = 'Formato no reconocido: escriba 75°14\'36" o 75 14 36'; return; }
+  inp.classList.remove('mal');
+  if (r.h === 'S' || r.h === 'N') sel.value = r.h; else if (r.h === 'W' || r.h === 'O') sel.value = 'O'; else if (r.h === 'E') sel.value = 'E'; else if (r.h === '-') sel.value = tipo === 'lat' ? 'S' : 'O';
+  const val = r.v * ((sel.value === 'S' || sel.value === 'O') ? -1 : 1);
+  t[k] = Object.assign({ lat: null, lon: null }, t[k] || {}, { [tipo]: Math.round(val * 1e6) / 1e6 });
+  inp.value = aGMS(t[k][tipo], tipo, true);
+  blk.querySelector('[data-cd]').textContent = camOk(t[k]) ? t[k].lat.toFixed(6) + ', ' + t[k].lon.toFixed(6) : 'falta ' + (t[k].lat == null ? 'la latitud' : 'la longitud');
+  dibujarTramo(t, camOk(t[k])); marcarSucio();
+});
+$('#p-tramos').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ca]'); if (!b || esLector()) return;
+  const k = b.closest('[data-cam]').dataset.cam, t = tramoActual(), nom = k === 'cIni' ? (t.pozoIni || 'cámara inicial') : (t.pozoFin || 'cámara final');
+  if (b.dataset.ca === 'mapa') { camModo = k; $('#cam-modo').innerHTML = `<b style="color:var(--acc)">Toque el mapa donde está ${esc(nom)}.</b> También puede arrastrar los marcadores.`; $('#mapa-t').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  else if (b.dataset.ca === 'quitar') { t[k] = null; const blk = $(`.cam[data-cam="${k}"]`); blk.outerHTML = camBloque(t, k); dibujarTramo(t, false); marcarSucio(); }
+  else if (b.dataset.ca === 'gps') {
+    if (!navigator.geolocation) return toast('Este equipo no ofrece ubicación.');
+    b.disabled = true;
+    navigator.geolocation.getCurrentPosition((p) => { fijarCam(t, k, p.coords.latitude, p.coords.longitude); toast(`${esc(nom)}: ubicación tomada (±${Math.round(p.coords.accuracy)} m).`); },
+      (er) => { b.disabled = false; toast('No se obtuvo la ubicación: ' + esc(er.message), 'err'); }, { enableHighAccuracy: true, timeout: 20000 });
+  }
+});
 
 /* ------------------------------------------------------------ ficha del hallazgo
    Se abre al capturar un fotograma (el video queda en pausa y sigue al guardar) o al cargar fotos (se recorren una por una). */
@@ -1084,13 +1199,14 @@ function pintarVista() {
       <h1>${esc(g.proyecto || 'Sin título')}</h1>
       <div style="color:#5b6573">${esc([g.cliente, g.municipio, g.departamento].filter(Boolean).join(' · '))}</div>
       <h2>1. Información general</h2>
-      ${filaKV([['Cliente', g.cliente], ['Contrato', g.contrato], ['Municipio', g.municipio], ['Departamento', g.departamento], ['Sector', g.sector], ['Tipo de inspección', g.tipo], ['Fecha de inspección', fFecha(g.fechaInspeccion)], ['Fecha del informe', fFecha(g.fechaInforme)], ['Equipo', g.equipo], ['Clima', g.clima], ['Limpieza previa', g.limpieza], ['Método de limpieza', g.metodoLimpieza], ['Operador', g.operador], ['Auxiliar de campo', g.auxiliar]])}
+      ${filaKV([['Cliente', g.cliente], ['Contrato', g.contrato], ['Municipio', g.municipio], ['Departamento', g.departamento], ['Sector', g.sector], ['Tipo de inspección', g.tipo], ['Fecha de inspección', fFecha(g.fechaInspeccion)], ['Fecha del informe', fFecha(g.fechaInforme)], ['Equipo', g.equipo], ['Clima', g.clima], ['Limpieza previa', g.limpieza], ['Método de limpieza', g.metodoLimpieza], ['Operador', g.operador], ['Auxiliar de campo', g.auxiliar], ['Coordenadas', g.lat != null ? camTxt({ lat: Number(g.lat), lon: Number(g.lon) }) : '']])}
       ${g.notasCampo ? `<p style="white-space:pre-wrap">${esc(g.notasCampo)}</p>` : ''}
       <h2>2. Alcance y metodología</h2>${I.alcance ? `<p style="white-space:pre-wrap">${esc(I.alcance)}</p>` : '<p style="color:#9aa3ae">Sin texto de alcance.</p>'}
       <h3>Grados de severidad empleados</h3><table><tr><th>Grado</th><th>Severidad</th></tr>${GRADOS.slice(1).map((x) => `<tr><td><span class="gtag" style="background:${x.c}">${x.g}</span></td><td>${x.n}</td></tr>`).join('')}</table>
       <h2>3. Resultados por tramo</h2>
       ${I.tramos.map((t, ti) => `<h3>3.${ti + 1} Tramo ${esc(etiquetaTramo(t))}</h3>
-        ${filaKV([['Sentido', t.sentido], ['Tipo de red', t.red], ['Material', t.material], ['Diámetro', t.diametro ? nf(t.diametro, 0) + ' mm' : ''], ['Longitud del tramo', t.longitud != null ? nf(t.longitud) + ' m' : ''], ['Longitud inspeccionada', t.inspeccionada != null ? nf(t.inspeccionada) + ' m' : ''], ['Prof. pozo inicial', t.profIni != null ? nf(t.profIni) + ' m' : ''], ['Prof. pozo final', t.profFin != null ? nf(t.profFin) + ' m' : ''], ['Ubicación', t.ubicacion], ['Coordenadas', t.coord], ['Fecha', fFecha(t.fecha)], ['Condición general', t.condicion], ['Video', t.video ? t.video.nombre : ''], ['Fin anticipado', t.finAnticipado]])}
+        ${filaKV([['Sentido', t.sentido], ['Tipo de red', t.red], ['Material', t.material], ['Diámetro', t.diametro ? nf(t.diametro, 0) + ' mm' : ''], ['Longitud del tramo', t.longitud != null ? nf(t.longitud) + ' m' : ''], ['Longitud inspeccionada', t.inspeccionada != null ? nf(t.inspeccionada) + ' m' : ''], ['Prof. pozo inicial', t.profIni != null ? nf(t.profIni) + ' m' : ''], ['Prof. pozo final', t.profFin != null ? nf(t.profFin) + ' m' : ''], ['Ubicación', t.ubicacion], ['Cámara inicial', camTxt(t.cIni)], ['Cámara final', camTxt(t.cFin)], ['Fecha', fFecha(t.fecha)], ['Condición general', t.condicion], ['Video', t.video ? t.video.nombre : ''], ['Fin anticipado', t.finAnticipado]])}
+        ${camOk(t.cIni) || camOk(t.cFin) ? `<div class="pv-mapa" data-pvmapa="${ti}"><span>Generando el recorte del mapa…</span></div>` : ''}
         <div style="border:1px solid #e3e8ee;border-radius:4px;padding:6px;margin:8px 0">${perfilSVG(t, { claro: true })}</div>
         ${t.obs.length ? `<table><tr><th>#</th><th>Dist. (m)</th><th>Código</th><th>Descripción</th><th>Hora</th><th>Grado</th></tr>${t.obs.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(nf(o.dist))}${o.distFin != null ? ' – ' + esc(nf(o.distFin)) : ''}</td><td><b>${esc(o.codigo)}</b>${COD[o.codigo] ? '<br><span style="color:#6b7684">' + esc(COD[o.codigo].n) + '</span>' : ''}</td><td>${esc(o.desc)}</td><td>${o.hIni ? esc(o.hIni + (o.hFin ? ' a ' + o.hFin : '')) : ''}</td><td>${o.grado ? `<span class="gtag" style="background:${GRADOS[o.grado].c}">${o.grado}</span>` : '—'}</td></tr>`).join('')}</table>` : '<p style="color:#9aa3ae">Sin observaciones registradas.</p>'}
         ${t.obs.some(fotoSrc) ? `<div class="fotos">${t.obs.map((o, i) => (fotoSrc(o) ? `<figure><img src="${fotoSrc(o)}" alt=""><figcaption><b>Foto ${++fN}</b> · Obs. ${i + 1}${o.dist != null ? ' · ' + esc(nf(o.dist)) + ' m' : ''}${o.codigo ? ' · ' + esc(o.codigo) : ''}${o.grado ? ' · Grado ' + o.grado : ''}${o.desc ? '<br>' + esc(o.desc) : ''}</figcaption></figure>` : '')).join('')}</div>` : ''}
@@ -1101,8 +1217,128 @@ function pintarVista() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px 48px;margin-top:56px">${(I.firmas || []).filter((f) => f.nombre || f.cargo).map((f) => `<div><div style="font-size:10px;letter-spacing:.12em;color:#6b7684;text-transform:uppercase;margin-bottom:34px">${esc(f.rol)}</div><div style="border-top:1.5px solid #0a2a4a;padding-top:6px"><b>${esc(f.nombre || ' ')}</b><br><span style="color:#6b7684">${esc([f.cargo, f.matricula ? 'M.P. ' + f.matricula : ''].filter(Boolean).join(' · '))}</span></div></div>`).join('')}</div>
     </div>`;
   $('#p-vista').innerHTML = html;
+  (async () => {
+    for (const el of $$('#p-vista [data-pvmapa]')) {
+      try { const m = await window.HRExport.mapaPNG([I.tramos[Number(el.dataset.pvmapa)]], I.tramos); el.innerHTML = `<img src="${m.url}" alt="Mapa del tramo">`; }
+      catch (e) { el.innerHTML = '<span>No se pudo generar el mapa.</span>'; }
+    }
+  })();
 }
 
+
+
+/* ============================================================ mapas (OpenStreetMap con Leaflet, cargado solo cuando se usa) */
+let leafletListo = null;
+function cargarLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (leafletListo) return leafletListo;
+  leafletListo = new Promise((res, rej) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'lib/leaflet/leaflet.css'; document.head.appendChild(css);
+    const s = document.createElement('script'); s.src = 'lib/leaflet/leaflet.js'; s.onload = res; s.onerror = () => rej(new Error('No se pudo cargar el mapa')); document.head.appendChild(s);
+  });
+  return leafletListo;
+}
+function capaOSM(m) {
+  return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(m);
+}
+const pinHR = (grado, grande) => L.divIcon({ className: '', iconSize: grande ? [34, 42] : [26, 32], iconAnchor: grande ? [17, 40] : [13, 30], popupAnchor: [0, grande ? -36 : -26],
+  html: `<svg class="pin" viewBox="0 0 34 42" width="${grande ? 34 : 26}" height="${grande ? 42 : 32}"><path d="M17 41C17 41 32 26 32 16A15 15 0 0 0 2 16C2 26 17 41 17 41Z" fill="#0A2A4A" stroke="#fff" stroke-width="2"/><circle cx="17" cy="16" r="8.5" fill="none" stroke="${grado ? GRADOS[grado].c : '#36B5D6'}" stroke-width="3.5"/><circle cx="17" cy="14.5" r="2.6" fill="#fff"/></svg>` });
+
+/* mapa mundi de todos los informes */
+let mapaG = null;
+async function pintarMapaGlobal() {
+  const box = $('#mapa-global'); if (!box) return;
+  try { await cargarLeaflet(); } catch (e) { box.innerHTML = '<div class="vacio">' + esc(e.message) + '</div>'; return; }
+  if (!mapaG || !document.body.contains(mapaG.getContainer())) {
+    box.innerHTML = '';
+    mapaG = L.map(box, { worldCopyJump: true, zoomControl: true, minZoom: 2 }).setView([4.5, -74.5], 3);
+    capaOSM(mapaG); mapaG._capa = L.layerGroup().addTo(mapaG);
+  }
+  mapaG._capa.clearLayers();
+  const q = norm(S.q), I = S.informes.filter((x) => x.lat != null && (!S.filtro || x.estado === S.filtro) && (!q || norm([x.id, x.titulo, x.cliente, x.municipio].join(' ')).includes(q)));
+  const lim = [];
+  I.forEach((x) => {
+    (x.lin || []).forEach((l) => { L.polyline([[l[0], l[1]], [l[2], l[3]]], { color: '#36B5D6', weight: 5, opacity: 0.95 }).bindTooltip(esc(x.id + ' · ' + (l[4] || 'tramo'))).addTo(mapaG._capa); lim.push([l[0], l[1]], [l[2], l[3]]); });
+    (x.pts || []).forEach((p) => { L.circleMarker([p[0], p[1]], { radius: 4, color: '#fff', weight: 1, fillColor: '#36B5D6', fillOpacity: 0.95 }).bindTooltip(esc(x.id + ' · ' + (p[2] || 'tramo'))).addTo(mapaG._capa); lim.push([p[0], p[1]]); });
+    L.marker([x.lat, x.lon], { icon: pinHR(x.gradoMax, true), title: x.id }).bindPopup(`<div class="pop"><div class="mono" style="color:#137a99;font-size:11px">${esc(x.id)} · ${esc(ESTADOS[x.estado] || x.estado)}</div><b>${esc(x.titulo)}</b><div style="color:#5b6573">${esc([x.cliente, x.municipio].filter(Boolean).join(' · '))}</div>
+      <div style="margin:6px 0">${x.tramos || 0} tramos · <b>${nf(x.ml || 0, 1)} m</b> inspeccionados · ${x.obs || 0} hallazgos</div><a href="#informe/${encodeURIComponent(x.id)}" class="btn xs pri" style="text-decoration:none">Abrir informe</a></div>`, { minWidth: 250 }).addTo(mapaG._capa);
+    lim.push([x.lat, x.lon]);
+  });
+  setTimeout(() => {
+    mapaG.invalidateSize();
+    if (lim.length === 1) mapaG.setView(lim[0], 15); else if (lim.length) mapaG.fitBounds(lim, { padding: [40, 40], maxZoom: 16 }); else mapaG.setView([4.5, -74.5], 3);
+  }, 60);
+  $('#mapa-nota').textContent = I.length ? `${I.length} informe${I.length === 1 ? '' : 's'} con ubicación · ${nf(I.reduce((a, x) => a + (Number(x.ml) || 0), 0), 1)} m inspeccionados` : 'Ningún informe tiene ubicación todavía. Póngala en «Datos generales → Ubicación de la inspección».';
+}
+function vistaLista(v) {
+  S.vistaLista = v;
+  $$('#vista-l .chip').forEach((c) => c.classList.toggle('on', c.dataset.vistaL === v));
+  $('#lista').classList.toggle('hide', v === 'mapa'); $('#mapa-w').classList.toggle('hide', v !== 'mapa');
+  if (v === 'mapa') pintarMapaGlobal();
+}
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-vista-l]'); if (b) { vistaLista(b.dataset.vistaL); if (b.classList.contains('kpi')) $('#mapa-w').scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
+
+/* ubicación del informe: mapa para elegir el punto, GPS y búsqueda de dirección */
+let mapaU = null, pinU = null;
+function ubicacionHTML() {
+  const g = S.inf.general;
+  return `<div class="card" id="ubic"><h3><span class="n">04</span>Ubicación de la inspección <span class="der solo-ed"><button type="button" class="btn sm" data-ub="gps">${ico('gps')}Usar mi ubicación (GPS)</button></span></h3>
+    <p class="ayuda">Toque el mapa o arrastre el marcador hasta el sitio inspeccionado. Esta ubicación es la que aparece en el mapa general de informes. Las líneas azules son los tramos con sus cámaras ubicadas.</p>
+    <div class="ub-buscar solo-ed"><input class="inp" id="ub-q" placeholder="Buscar dirección o lugar: «Calle 12 Montenegro Quindío»" autocomplete="off"><button type="button" class="btn sm" data-ub="buscar">${ico('buscar')}Buscar</button></div>
+    <div class="ub-res" id="ub-res"></div>
+    <div class="mapa-u" id="mapa-u"></div>
+    <div class="frm" style="margin-top:12px"><label class="campo"><span>Latitud</span><input id="ub-lat" class="mono" inputmode="decimal" value="${g.lat == null ? '' : esc(g.lat)}" placeholder="4,5339"></label>
+      <label class="campo"><span>Longitud</span><input id="ub-lon" class="mono" inputmode="decimal" value="${g.lon == null ? '' : esc(g.lon)}" placeholder="-75,6811"></label>
+      <div class="campo w2"><span>&nbsp;</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm solo-ed" data-ub="quitar">${ico('x')}Quitar ubicación</button>${g.lat != null ? `<a class="btn sm" target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat=${g.lat}&mlon=${g.lon}#map=18/${g.lat}/${g.lon}">Abrir en OpenStreetMap</a>` : ''}</div></div></div></div>`;
+}
+async function montarUbicacion() {
+  const box = $('#mapa-u'); if (!box) return;
+  try { await cargarLeaflet(); } catch (e) { box.innerHTML = '<div class="vacio">' + esc(e.message) + '</div>'; return; }
+  if (!document.body.contains(box)) return;
+  const g = S.inf.general, tiene = g.lat != null && g.lon != null;
+  if (mapaU) { try { mapaU.remove(); } catch (e) { /* ya no estaba */ } }
+  mapaU = L.map(box, { zoomControl: true }).setView(tiene ? [g.lat, g.lon] : [4.53, -75.68], tiene ? 17 : 9);
+  capaOSM(mapaU);
+  S.inf.tramos.forEach((t) => { if (camOk(t.cIni) && camOk(t.cFin)) L.polyline([[t.cIni.lat, t.cIni.lon], [t.cFin.lat, t.cFin.lon]], { color: '#36B5D6', weight: 5 }).bindTooltip(esc(etiquetaTramo(t))).addTo(mapaU); [t.cIni, t.cFin].forEach((c) => { if (camOk(c)) L.circleMarker([c.lat, c.lon], { radius: 4, color: '#fff', weight: 1.5, fillColor: '#0A2A4A', fillOpacity: 1 }).addTo(mapaU); }); });
+  pinU = null; if (tiene) ponerPin(g.lat, g.lon, false);
+  if (!esLector()) mapaU.on('click', (e) => ponerPin(e.latlng.lat, e.latlng.lng, true));
+  setTimeout(() => mapaU.invalidateSize(), 80);
+}
+function ponerPin(lat, lon, guardar) {
+  lat = Math.round(lat * 1e6) / 1e6; lon = Math.round(lon * 1e6) / 1e6;
+  if (!pinU) { pinU = L.marker([lat, lon], { icon: pinHR(0, true), draggable: !esLector() }).addTo(mapaU); pinU.on('dragend', () => { const p = pinU.getLatLng(); ponerPin(p.lat, p.lng, true); }); }
+  else pinU.setLatLng([lat, lon]);
+  if (guardar) { S.inf.general.lat = lat; S.inf.general.lon = lon; $('#ub-lat').value = String(lat).replace('.', ','); $('#ub-lon').value = String(lon).replace('.', ','); marcarSucio(); }
+}
+$('#p-general').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-ub]'), r = e.target.closest('[data-ubr]');
+  if (r) { const [la, lo] = r.dataset.ubr.split(',').map(Number); mapaU.setView([la, lo], 18); ponerPin(la, lo, true); $('#ub-res').innerHTML = ''; return; }
+  if (!b || esLector()) return;
+  const a = b.dataset.ub;
+  if (a === 'gps') {
+    if (!navigator.geolocation) return toast('Este equipo no ofrece ubicación.');
+    b.disabled = true;
+    navigator.geolocation.getCurrentPosition((p) => { b.disabled = false; mapaU.setView([p.coords.latitude, p.coords.longitude], 18); ponerPin(p.coords.latitude, p.coords.longitude, true); toast('Ubicación tomada (precisión ±' + Math.round(p.coords.accuracy) + ' m).'); },
+      (er) => { b.disabled = false; toast('No se obtuvo la ubicación: ' + esc(er.message), 'err'); }, { enableHighAccuracy: true, timeout: 20000 });
+  } else if (a === 'quitar') { S.inf.general.lat = null; S.inf.general.lon = null; if (pinU) { pinU.remove(); pinU = null; } $('#ub-lat').value = ''; $('#ub-lon').value = ''; marcarSucio(); }
+  else if (a === 'buscar') buscarLugar();
+});
+$('#p-general').addEventListener('keydown', (e) => { if (e.target.id === 'ub-q' && e.key === 'Enter') { e.preventDefault(); buscarLugar(); } });
+$('#p-general').addEventListener('change', (e) => {
+  if (e.target.id !== 'ub-lat' && e.target.id !== 'ub-lon') return;
+  const la = pn($('#ub-lat').value), lo = pn($('#ub-lon').value);
+  if (la != null && lo != null && Math.abs(la) <= 90 && Math.abs(lo) <= 180) { mapaU.setView([la, lo], 17); ponerPin(la, lo, true); }
+  else if (la == null && lo == null) { S.inf.general.lat = null; S.inf.general.lon = null; marcarSucio(); }
+  else if (la != null && lo != null) toast('Coordenadas no válidas: latitud entre -90 y 90, longitud entre -180 y 180.', 'err');
+});
+async function buscarLugar() {
+  const q = ($('#ub-q').value || '').trim(); if (!q) return;
+  const box = $('#ub-res'); box.innerHTML = '<span class="ayuda">Buscando…</span>';
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=co&accept-language=es&q=' + encodeURIComponent(q), { headers: { Accept: 'application/json' } }).then((x) => x.json());
+    box.innerHTML = r.length ? r.map((x) => `<button type="button" class="ub-it" data-ubr="${x.lat},${x.lon}">${ico('gps')}<span>${esc(x.display_name)}</span></button>`).join('') : '<span class="ayuda">Sin resultados. Pruebe con municipio y departamento, o toque el mapa.</span>';
+  } catch (e) { box.innerHTML = '<span class="ayuda">No se pudo buscar ahora. Toque el sitio en el mapa.</span>'; }
+}
 
 /* ============================================================ descartar (primera apertura) y eliminar */
 async function descartarInforme(id) {

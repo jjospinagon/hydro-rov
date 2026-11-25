@@ -69,11 +69,11 @@ async function entregar(I, blob, fmt, op, p) {
 function datosGenerales(g) {
   return [['Cliente', g.cliente], ['Contrato', g.contrato], ['Municipio', g.municipio], ['Departamento', g.departamento], ['Sector o dirección', g.sector], ['Tipo de inspección', g.tipo],
     ['Fecha de inspección', HR.fFecha(g.fechaInspeccion)], ['Fecha del informe', HR.fFecha(g.fechaInforme)], ['Equipo', g.equipo], ['Clima', g.clima],
-    ['Limpieza previa', g.limpieza], ['Método de limpieza', g.metodoLimpieza], ['Operador', g.operador], ['Auxiliar de campo', g.auxiliar]].filter(([, v]) => v);
+    ['Limpieza previa', g.limpieza], ['Método de limpieza', g.metodoLimpieza], ['Operador', g.operador], ['Auxiliar de campo', g.auxiliar], ['Coordenadas', g.lat != null && g.lat !== '' ? HR.camTxt({ lat: Number(g.lat), lon: Number(g.lon) }) : '']].filter(([, v]) => v);
 }
 function datosTramo(t) {
   return [['Sentido', t.sentido], ['Tipo de red', t.red], ['Material', t.material], ['Diámetro nominal', m(t.diametro, 'mm', 0)], ['Longitud del tramo', m(t.longitud, 'm')], ['Longitud inspeccionada', m(t.inspeccionada, 'm')],
-    ['Profundidad pozo inicial', m(t.profIni, 'm')], ['Profundidad pozo final', m(t.profFin, 'm')], ['Ubicación', t.ubicacion], ['Coordenadas', t.coord], ['Fecha', HR.fFecha(t.fecha)],
+    ['Profundidad pozo inicial', m(t.profIni, 'm')], ['Profundidad pozo final', m(t.profFin, 'm')], ['Ubicación', t.ubicacion], ['Cámara inicial', HR.camTxt(t.cIni)], ['Cámara final', HR.camTxt(t.cFin)], ['Fecha', HR.fFecha(t.fecha)],
     ['Condición general', t.condicion], ['Video', t.video ? t.video.nombre : ''], ['Fin anticipado', t.finAnticipado]].filter(([, v]) => v);
 }
 const firmasDe = (I) => {
@@ -82,6 +82,87 @@ const firmasDe = (I) => {
 };
 const pares4 = (a) => { const r = []; for (let i = 0; i < a.length; i += 2) r.push([a[i][0], a[i][1], a[i + 1] ? a[i + 1][0] : '', a[i + 1] ? a[i + 1][1] : '']); return r; };
 const leyendaFoto = (o, i, n) => `Foto ${n} · Obs. ${i + 1}${o.dist != null ? ' · ' + HR.nf(o.dist) + ' m' : ''}${o.codigo ? ' · ' + o.codigo + (HR.COD[o.codigo] ? ' ' + HR.COD[o.codigo].n.toLowerCase() : '') : ''}${o.grado ? ' · Grado ' + o.grado : ''}`;
+
+
+/* Recorte de mapa (OpenStreetMap) con los tramos dibujados. `foco`: tramos a resaltar; `todos`: el resto se dibuja en gris. */
+const lon2x = (lon, z) => ((lon + 180) / 360) * 256 * Math.pow(2, z);
+const lat2y = (lat, z) => { const r = (lat * Math.PI) / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 256 * Math.pow(2, z); };
+function cargarTesela(url) {
+  return new Promise((res) => { const i = new Image(); i.crossOrigin = 'anonymous'; const to = setTimeout(() => res(null), 9000); i.onload = () => { clearTimeout(to); res(i); }; i.onerror = () => { clearTimeout(to); res(null); }; i.src = url; });
+}
+async function mapaPNG(foco, todos, op = {}) {
+  const W = op.w || 1400, H = op.h || 560, PAD = 90;
+  const cams = (t) => [t.cIni, t.cFin].filter(HR.camOk);
+  const pts = []; foco.forEach((t) => cams(t).forEach((c) => pts.push([c.lat, c.lon])));
+  if (!pts.length) return null;
+  let z = 18;
+  if (pts.length > 1) {
+    for (z = 19; z > 3; z--) {
+      const xs = pts.map((p) => lon2x(p[1], z)), ys = pts.map((p) => lat2y(p[0], z));
+      if (Math.max(...xs) - Math.min(...xs) <= W - 2 * PAD && Math.max(...ys) - Math.min(...ys) <= H - 2 * PAD) break;
+    }
+  }
+  z = Math.min(z, 19);
+  /* tramos cortos: más allá del zoom 19 se amplían las teselas (hasta 3×) para que el tramo se lea bien */
+  let sc = 1;
+  { const bx = pts.map((p) => lon2x(p[1], z)), by = pts.map((p) => lat2y(p[0], z)), bw = Math.max(...bx) - Math.min(...bx), bh = Math.max(...by) - Math.min(...by);
+    if (z === 19 || pts.length === 1) sc = Math.max(1, Math.min(3, pts.length === 1 ? 1.6 : Math.min((W - 2 * PAD) / Math.max(bw, 1), (H - 2 * PAD) / Math.max(bh, 1)))); }
+  const X = (lon) => lon2x(lon, z) * sc, Y = (lat) => lat2y(lat, z) * sc, T = 256 * sc;
+  const xs = pts.map((p) => X(p[1])), ys = pts.map((p) => Y(p[0]));
+  const cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2, x0 = cx - W / 2, y0 = cy - H / 2;
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = '#eef2f5'; g.fillRect(0, 0, W, H);
+  const n = Math.pow(2, z), tareas = [];
+  for (let tx = Math.floor(x0 / T); tx <= Math.floor((x0 + W - 1) / T); tx++) {
+    for (let ty = Math.floor(y0 / T); ty <= Math.floor((y0 + H - 1) / T); ty++) {
+      if (ty < 0 || ty >= n) continue;
+      const wx = ((tx % n) + n) % n;
+      tareas.push(cargarTesela(`https://tile.openstreetmap.org/${z}/${wx}/${ty}.png`).then((im) => ({ im, dx: tx * T - x0, dy: ty * T - y0 })));
+    }
+  }
+  const teselas = await Promise.all(tareas); let base = 0;
+  g.imageSmoothingQuality = 'high'; teselas.forEach(({ im, dx, dy }) => { if (im) { g.drawImage(im, dx, dy, T + 0.5, T + 0.5); base++; } });
+  if (!base) { g.fillStyle = '#6b7684'; g.font = '20px Arial'; g.fillText('Mapa base no disponible (sin conexión con OpenStreetMap)', 24, H - 24); }
+  const P = (cm) => [X(cm.lon) - x0, Y(cm.lat) - y0];
+  const linea = (t, col, ancho, borde) => {
+    if (!HR.camOk(t.cIni) || !HR.camOk(t.cFin)) return;
+    const [ax, ay] = P(t.cIni), [bx, by] = P(t.cFin);
+    g.lineCap = 'round';
+    if (borde) { g.strokeStyle = '#0A2A4A'; g.lineWidth = ancho + 6; g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); }
+    g.strokeStyle = col; g.lineWidth = ancho; g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+    if (borde) { /* flecha del sentido de la inspección (de la cámara inicial a la final) */
+      const mx = (ax + bx) / 2, my = (ay + by) / 2, an = Math.atan2(by - ay, bx - ax), h = 16;
+      g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(mx + h * Math.cos(an), my + h * Math.sin(an));
+      g.lineTo(mx + h * Math.cos(an + 2.5), my + h * Math.sin(an + 2.5)); g.lineTo(mx + h * Math.cos(an - 2.5), my + h * Math.sin(an - 2.5)); g.closePath(); g.fill();
+    }
+  };
+  (todos || []).forEach((t) => { if (foco.indexOf(t) < 0) linea(t, 'rgba(90,100,115,.85)', 6, false); });
+  foco.forEach((t) => linea(t, '#36B5D6', 9, true));
+  const rotulos = new Map();
+  foco.forEach((t) => [[t.cIni, t.pozoIni || 'Inicial'], [t.cFin, t.pozoFin || 'Final']].forEach(([cm, nom]) => { if (HR.camOk(cm)) rotulos.set(cm.lat.toFixed(6) + cm.lon.toFixed(6), [cm, nom]); }));
+  g.textBaseline = 'middle';
+  rotulos.forEach(([cm, nom]) => {
+    const [x, y] = P(cm);
+    g.fillStyle = '#ffffff'; g.strokeStyle = '#0A2A4A'; g.lineWidth = 5; g.beginPath(); g.arc(x, y, 12, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.font = '700 22px Arial, Helvetica, sans-serif'; const w = g.measureText(nom).width + 20;
+    const lx = Math.min(Math.max(x - w / 2, 6), W - w - 6), ly = y - 50;
+    g.fillStyle = '#0A2A4A'; g.beginPath(); if (g.roundRect) g.roundRect(lx, ly, w, 32, 6); else g.rect(lx, ly, w, 32); g.fill();
+    g.fillStyle = '#ffffff'; g.fillText(nom, lx + 10, ly + 16.5);
+  });
+  /* norte, escala y atribución */
+  g.fillStyle = 'rgba(255,255,255,.92)'; g.fillRect(W - 66, 14, 52, 62); g.fillStyle = '#0A2A4A'; g.beginPath(); g.moveTo(W - 40, 22); g.lineTo(W - 52, 52); g.lineTo(W - 40, 46); g.lineTo(W - 28, 52); g.closePath(); g.fill();
+  g.font = '700 16px Arial'; g.textAlign = 'center'; g.fillText('N', W - 40, 66); g.textAlign = 'left';
+  const latc = pts.reduce((a, p) => a + p[0], 0) / pts.length, mpp = (156543.03392 * Math.cos((latc * Math.PI) / 180)) / n / sc;
+  const opciones = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000, 20000, 50000]; let L = opciones[0];
+  opciones.forEach((o) => { if (o / mpp <= 220) L = o; });
+  const px = L / mpp;
+  g.fillStyle = 'rgba(255,255,255,.92)'; g.fillRect(14, H - 50, px + 90, 36);
+  g.fillStyle = '#0A2A4A'; g.fillRect(24, H - 30, px, 6); g.fillRect(24, H - 38, 2, 14); g.fillRect(24 + px - 2, H - 38, 2, 14);
+  g.font = '15px Arial'; g.fillText(L >= 1000 ? L / 1000 + ' km' : L + ' m', 32 + px, H - 28);
+  const at = '© OpenStreetMap'; g.font = '14px Arial'; const aw = g.measureText(at).width + 14;
+  g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(W - aw - 8, H - 26, aw, 20); g.fillStyle = '#3c4652'; g.fillText(at, W - aw - 1, H - 15);
+  return { url: c.toDataURL('image/jpeg', 0.88), w: W, h: H };
+}
 
 /* ====================================================================== PDF */
 async function pdf(I, op) {
@@ -128,6 +209,12 @@ async function pdf(I, op) {
 
     titulo('1.  Información general'); kv(datosGenerales(g));
     if (g.notasCampo) parrafo(g.notasCampo);
+    const conCam = I.tramos.filter((t) => HR.camOk(t.cIni) || HR.camOk(t.cFin));
+    if (conCam.length) {
+      p.set(0.2, 'Dibujando la localización de los tramos…');
+      const mg = await mapaPNG(conCam, I.tramos);
+      if (mg) { const mh = CW * (mg.h / mg.w); espacio(mh + 12); fuente('bold', 9.6, NAVY); doc.text('Localización de los tramos inspeccionados', M, y + 4); y += 7; doc.addImage(mg.url, 'JPEG', M, y, CW, mh); doc.setDrawColor(...LINEA); doc.rect(M, y, CW, mh); y += mh + 6; }
+    }
     titulo('2.  Alcance y metodología');
     if (I.alcance) parrafo(I.alcance);
     tabla({ head: [['Grado', 'Severidad']], body: HR.GRADOS.slice(1).map((x) => [String(x.g), x.n]), tableWidth: 70,
@@ -140,6 +227,10 @@ async function pdf(I, op) {
       espacio(70);
       subtitulo(`3.${ti + 1}  Tramo ${etq(t)}`);
       kv(datosTramo(t));
+      if (HR.camOk(t.cIni) || HR.camOk(t.cFin)) {
+        const mt = await mapaPNG([t], I.tramos);
+        if (mt) { const mh = CW * (mt.h / mt.w); espacio(mh + 4); doc.addImage(mt.url, 'JPEG', M, y, CW, mh); doc.setDrawColor(...LINEA); doc.rect(M, y, CW, mh); y += mh + 4; }
+      }
       const pf = await perfilPNG(t), ph = CW * (pf.h / pf.w);
       espacio(ph + 4); doc.setDrawColor(...LINEA); doc.setLineWidth(0.2); doc.rect(M, y, CW, ph + 2); doc.addImage(pf.url, 'PNG', M + 1, y + 1, CW - 2, ph); y += ph + 6;
       if (t.obs.length) {
@@ -246,6 +337,12 @@ async function docx(I, op) {
 
     cuerpo.push(H1('1.  Información general'), ...kv(datosGenerales(g)));
     if (g.notasCampo) cuerpo.push(...parrafos(g.notasCampo));
+    const conCam = I.tramos.filter((t) => HR.camOk(t.cIni) || HR.camOk(t.cFin));
+    if (conCam.length) {
+      p.set(0.15, 'Dibujando la localización de los tramos…');
+      const mg = await mapaPNG(conCam, I.tramos);
+      if (mg) cuerpo.push(H3('Localización de los tramos inspeccionados'), new Paragraph({ spacing: { after: 120 }, children: [img(mg.url, PX, PX * (mg.h / mg.w))] }));
+    }
     cuerpo.push(H1('2.  Alcance y metodología'));
     if (I.alcance) cuerpo.push(...parrafos(I.alcance));
     cuerpo.push(new Table({ width: { size: 4200, type: WidthType.DXA }, columnWidths: [1000, 3200], borders: bordes,
@@ -257,6 +354,7 @@ async function docx(I, op) {
     for (let ti = 0; ti < I.tramos.length; ti++) {
       const t = I.tramos[ti]; p.set(0.2 + 0.6 * (ti / I.tramos.length), `Armando el tramo ${ti + 1} de ${I.tramos.length}…`);
       cuerpo.push(H2(`3.${ti + 1}  Tramo ${etq(t)}`), ...kv(datosTramo(t)));
+      if (HR.camOk(t.cIni) || HR.camOk(t.cFin)) { const mt = await mapaPNG([t], I.tramos); if (mt) cuerpo.push(new Paragraph({ spacing: { after: 80 }, keepNext: true, children: [img(mt.url, PX, PX * (mt.h / mt.w))] })); }
       const pf = await perfilPNG(t);
       cuerpo.push(new Paragraph({ spacing: { after: 120 }, children: [img(pf.url, PX, PX * (pf.h / pf.w), 'png')] }));
       if (t.obs.length) {
@@ -319,5 +417,5 @@ async function docx(I, op) {
   } finally { p.fin(); }
 }
 
-window.HRExport = { pdf, docx };
+window.HRExport = { pdf, docx, mapaPNG };
 })();

@@ -17,7 +17,7 @@
  * Instalación: ver LEEME-DESPLIEGUE.md. Ejecutar una vez la función instalar() desde el editor para autorizar.
  */
 
-var VERSION = '1.1.0 (2026-11-25)';
+var VERSION = '1.3.0 (2026-11-25)';
 
 var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
@@ -386,13 +386,44 @@ function resumen_(inf, e) {
   e.estado = txt_(inf.estado, 20) || 'BORRADOR';
   e.tramos = tramos.length; e.obs = nobs; e.gradoMax = max;
   e.portada = portada;
+  /* metros lineales: la longitud inspeccionada que registró el inspector (si no la puso, la del tramo) */
+  var ml = 0, pts = [], lin = [];
+  var cam = function (c) { return c && isFinite(Number(c.lat)) && isFinite(Number(c.lon)) && c.lat !== null && c.lon !== null && Math.abs(c.lat) <= 90 && Math.abs(c.lon) <= 180 ? [Number(c.lat), Number(c.lon)] : null; };
+  tramos.forEach(function (t) {
+    var v = Number(t.inspeccionada); if (!(v > 0)) v = Number(t.longitud); if (v > 0 && v < 100000) ml += v;
+    var a = cam(t.cIni) || coord_(t.coord), b = cam(t.cFin), et = txt_((t.pozoIni || '') + ' → ' + (t.pozoFin || ''), 40);
+    if (a && pts.length < 80) pts.push([a[0], a[1], txt_(t.pozoIni || 'cámara', 20)]);
+    if (b && pts.length < 80) pts.push([b[0], b[1], txt_(t.pozoFin || 'cámara', 20)]);
+    if (a && b && lin.length < 60) lin.push([a[0], a[1], b[0], b[1], et]);
+  });
+  e.lin = lin;
+  e.ml = Math.round(ml * 100) / 100;
+  var lat = Number(g.lat), lon = Number(g.lon);
+  e.lat = isFinite(lat) && Math.abs(lat) <= 90 && g.lat !== '' && g.lat != null ? lat : null;
+  e.lon = isFinite(lon) && Math.abs(lon) <= 180 && g.lon !== '' && g.lon != null ? lon : null;
+  if (e.lat == null && pts.length) { e.lat = pts[0][0]; e.lon = pts[0][1]; }
+  e.pts = pts;
   e.rev = inf.rev; e.actualizado = inf.actualizado; e.actualizadoPor = inf.actualizadoPor;
   return e;
 }
 
 /* ============================================================ informes */
+function coord_(s) {
+  var m = /(-?\d{1,2}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)/.exec(String(s || ''));
+  if (!m) return null;
+  var a = Number(m[1]), b = Number(m[2]);
+  return isFinite(a) && isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180 ? [a, b] : null;
+}
 function listar_(ses) {
   var ix = leerIndice_();
+  /* informes guardados antes de la versión 1.2: completar metros lineales y ubicación una sola vez */
+  if (ix.informes.some(function (x) { return x.ml === undefined; })) {
+    conCandado_(function () {
+      ix = leerIndice_();
+      ix.informes.forEach(function (e) { if (e.ml === undefined) { try { resumen_(leerInforme_(e), e); } catch (err) { e.ml = 0; } } });
+      guardarIndice_(ix);
+    });
+  }
   return { ok: true, informes: ix.informes.slice().sort(function (a, b) { return String(b.actualizado).localeCompare(String(a.actualizado)); }),
            usuario: publico_(ses.email, ses.user) };
 }
