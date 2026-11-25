@@ -17,7 +17,7 @@
  * Instalación: ver LEEME-DESPLIEGUE.md. Ejecutar una vez la función instalar() desde el editor para autorizar.
  */
 
-var VERSION = '1.4.0 (2026-11-25)';
+var VERSION = '1.5.0 (2026-11-25)';
 
 var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
@@ -427,6 +427,14 @@ function listar_(ses) {
       guardarIndice_(ix);
     });
   }
+  /* versión 1.5: informes creados antes de las carpetas por año y mes — se reubican una sola vez */
+  if (ix.informes.some(function (x) { return x.mes === undefined; })) {
+    conCandado_(function () {
+      ix = leerIndice_();
+      ix.informes.forEach(function (e) { if (e.mes === undefined) { try { ubicarCarpeta_(e, leerInforme_(e)); } catch (err) { /* se reintenta */ } } });
+      guardarIndice_(ix);
+    });
+  }
   return { ok: true, informes: ix.informes.slice().sort(function (a, b) { return String(b.actualizado).localeCompare(String(a.actualizado)); }),
            usuario: publico_(ses.email, ses.user) };
 }
@@ -438,8 +446,53 @@ function obtener_(ses, q) {
   return { ok: true, informe: leerInforme_(e), carpeta: DriveApp.getFolderById(e.carpeta).getUrl() };
 }
 
-function crearCarpetas_(id, titulo) {
-  var c = raiz_().createFolder(nombreCarpeta_(id, titulo));
+/* ---- carpetas por año y mes: Raíz / 2026 / 11 · Noviembre / HR-2026-004 · título
+   El mes es el de la fecha de inspección; si aún no se ha escrito, el de creación del informe. Si luego cambia la
+   fecha de inspección a otro mes, la carpeta del informe se mueve sola. */
+var MESES_ = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+function claveMes_(fechaInsp, respaldo) {
+  var m = /^(\d{4})-(\d{2})/.exec(String(fechaInsp || ''));
+  if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) return m[1] + '-' + m[2];
+  var d = respaldo ? new Date(respaldo) : new Date(); if (isNaN(d.getTime())) d = new Date();
+  return Utilities.formatDate(d, 'America/Bogota', 'yyyy-MM');
+}
+function hija_(padre, nombre) { var it = padre.getFoldersByName(nombre); return it.hasNext() ? it.next() : padre.createFolder(nombre); }
+function carpetaMes_(clave) {
+  var y = clave.slice(0, 4), m = Number(clave.slice(5, 7));
+  return hija_(hija_(raiz_(), y), ('0' + m).slice(-2) + ' · ' + MESES_[m - 1]);
+}
+function vacia_(f) {
+  var a = f.getFolders(); while (a.hasNext()) if (!a.next().isTrashed()) return false;
+  var b = f.getFiles(); while (b.hasNext()) if (!b.next().isTrashed()) return false;
+  return true;
+}
+/* tras mover o borrar un informe, retira la carpeta del mes y la del año si quedaron vacías */
+function podarVacias_(mes) {
+  try {
+    var raizId = raiz_().getId(), f = mes;
+    for (var k = 0; k < 2 && f && f.getId() !== raizId; k++) {
+      if (!vacia_(f)) return;
+      var p = f.getParents(), padre = p.hasNext() ? p.next() : null;
+      f.setTrashed(true); f = padre;
+    }
+  } catch (err) { /* no es grave */ }
+}
+function padreDe_(folderId) { try { var p = DriveApp.getFolderById(folderId).getParents(); return p.hasNext() ? p.next() : null; } catch (e) { return null; } }
+/* deja la carpeta del informe en el año/mes que le corresponde; devuelve true si la movió */
+function ubicarCarpeta_(e, inf) {
+  var clave = claveMes_((inf.general || {}).fechaInspeccion, inf.creado);
+  if (e.mes === clave) return false;
+  var c = DriveApp.getFolderById(e.carpeta), antes = padreDe_(e.carpeta), destino = carpetaMes_(clave);
+  if (!antes || antes.getId() !== destino.getId()) {
+    c.moveTo(destino);
+    if (antes && antes.getId() !== raiz_().getId()) podarVacias_(antes);
+  }
+  e.mes = clave;
+  return true;
+}
+
+function crearCarpetas_(id, titulo, clave) {
+  var c = carpetaMes_(clave).createFolder(nombreCarpeta_(id, titulo));
   return { carpeta: c.getId(), fFotos: c.createFolder('fotos').getId(), fVideos: c.createFolder('videos').getId(), fExport: c.createFolder('exportados').getId(), c: c };
 }
 
@@ -457,9 +510,10 @@ function crear_(ses, q) {
     var inf = limpiarInforme_(base);
     inf.id = id; inf.rev = 1; inf.creado = ahora_(); inf.creadoPor = ses.email;
     inf.actualizado = inf.creado; inf.actualizadoPor = ses.email; inf.estado = inf.estado || 'BORRADOR';
-    var cs = crearCarpetas_(id, (inf.general || {}).proyecto);
+    var clave = claveMes_((inf.general || {}).fechaInspeccion, inf.creado);
+    var cs = crearCarpetas_(id, (inf.general || {}).proyecto, clave);
     var a = cs.c.createFile('informe.json', JSON.stringify(inf), MimeType.PLAIN_TEXT);
-    var e = { id: id, carpeta: cs.carpeta, fFotos: cs.fFotos, fVideos: cs.fVideos, fExport: cs.fExport, archivo: a.getId() };
+    var e = { id: id, carpeta: cs.carpeta, fFotos: cs.fFotos, fVideos: cs.fVideos, fExport: cs.fExport, archivo: a.getId(), mes: clave };
     ix.informes.push(resumen_(inf, e));
     guardarIndice_(ix);
     auditar_(ses.email, 'informe_creado', id);
@@ -495,6 +549,7 @@ function guardar_(ses, q) {
     var tituloAnt = e.titulo;
     resumen_(nuevo, e);
     if (tituloAnt !== e.titulo) { try { DriveApp.getFolderById(e.carpeta).setName(nombreCarpeta_(e.id, e.titulo)); } catch (err) { /* nombre */ } }
+    try { ubicarCarpeta_(e, nuevo); } catch (err) { /* se reintenta en el próximo guardado */ }
     guardarIndice_(ix);
     return { ok: true, rev: nuevo.rev, actualizado: nuevo.actualizado, actualizadoPor: ses.email };
   });
@@ -526,7 +581,9 @@ function eliminar_(ses, q) {
       try { var it = DriveApp.getFolderById(par[1]).getFiles(); while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) conteo[par[0]]++; } } catch (err) { /* sin carpeta */ }
     });
     var url = '';
+    var mesE = padreDe_(e.carpeta);
     try { var c = DriveApp.getFolderById(e.carpeta); url = c.getUrl(); c.setTrashed(true); } catch (err) { /* ya no está */ }
+    if (mesE) podarVacias_(mesE);
     ix.informes = ix.informes.filter(function (x) { return x.id !== id; });
     guardarIndice_(ix);
     return { e: e, inf: inf, conteo: conteo, url: url };
@@ -548,7 +605,9 @@ function descartar_(ses, q) {
     var inf = leerInforme_(e);
     if (inf.creadoPor !== ses.email) throw Falla_('Solo quien creó el informe puede descartarlo.', 'PERMISO');
     if (Date.now() - new Date(inf.creado).getTime() > 12 * 3600000) throw Falla_('Este informe ya no se puede descartar; use «Eliminar».', 'PERMISO');
+    var mesD = padreDe_(e.carpeta);
     try { DriveApp.getFolderById(e.carpeta).setTrashed(true); } catch (err) { /* ya no está */ }
+    if (mesD) podarVacias_(mesD);
     ix.informes = ix.informes.filter(function (x) { return x.id !== id; });
     guardarIndice_(ix);
   });

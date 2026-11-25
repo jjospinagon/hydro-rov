@@ -6,7 +6,7 @@
 |---|---|---|
 | Aplicación web (`analisis/`) | GitHub Pages, repo `jjospinagon/hydro-rov` | Ingreso, informes, consola de video, fotos, perfil del tramo, exportación PDF y Word (en el navegador) |
 | Servidor (`servidor/Codigo.gs`) | Google Apps Script de **jjospinagon@gmail.com** | Usuarios y sesiones, guardado en Drive, subida de video por trozos, copias de los exportados |
-| Datos | Google Drive de jjospinagon@gmail.com → carpeta **HYDRO-ROV · Informes de inspección** | Una subcarpeta por informe: `informe.json`, `fotos/`, `videos/`, `exportados/` |
+| Datos | Google Drive de jjospinagon@gmail.com → carpeta **HYDRO-ROV · Informes de inspección** | `AAAA / MM · Mes / HR-AAAA-NNN · título /` con `informe.json`, `fotos/`, `videos/`, `exportados/` (mes = fecha de inspección; si cambia, la carpeta se mueve sola). En la raíz queda también `_sistema/`. |
 
 ## 1. Publicar el servidor (una sola vez)
 
@@ -50,3 +50,10 @@ La app queda servida en `https://hydro-rov.com/analisis/`. Para entrar por `anal
 ## Emergencia
 
 Si un creador pierde su clave: en el editor de Apps Script ejecutar `reiniciarCreadores()` → ambas vuelven a `0000` con cambio obligatorio.
+
+## Historial de versiones del servidor
+
+| Versión | Cambio | Reversión |
+|---|---|---|
+| 1.4.0 | QR de verificación, cámaras en GMS, importación de Excel | — |
+| 1.5.0 (2026-11-25) | Carpetas por año y mes; reubica una sola vez los informes existentes; poda carpetas de mes/año vacías | Implementar → Administrar implementaciones → Editar → elegir la versión 1.4.0. Las carpetas ya movidas quedan donde están y siguen funcionando, porque el índice guarda los ids, no las rutas. |
