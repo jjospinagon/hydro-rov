@@ -55,14 +55,14 @@ async function prepararFotos(I, p) {
 const fotoDe = (o) => (o.foto && (HR.S.fotos[o.foto.id] || HR.S.fotos[o.foto.k])) || null;
 function b64aU8(dataUrl) { const b = atob(dataUrl.split(',')[1]); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
 function blobB64(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
-async function entregar(I, blob, fmt, op, p) {
+async function entregar(I, blob, fmt, op, p, em) {
   const nombre = nombreArchivo(I, fmt);
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
   if (!op.subir) { HR.toast('Archivo descargado.', 'ok'); return; }
   p.set(0.92, 'Guardando una copia en Drive…');
   try {
-    const r = await HR.apiOk('subirExport', { id: I.id, formato: fmt, nombre, b64: await blobB64(blob) }, { timeout: 240000 });
+    const r = await HR.apiOk('subirExport', { id: I.id, formato: fmt, nombre, b64: await blobB64(blob), codigo: em ? em.codigo : '' }, { timeout: 240000 });
     HR.toast(`${fmt === 'pdf' ? 'PDF' : 'Word'} descargado y guardado en Drive · <a href="${HR.esc(r.url)}" target="_blank" rel="noopener">abrir</a>`, 'ok', 9000);
   } catch (e) { HR.toast('Se descargó, pero no se guardó la copia en Drive: ' + HR.esc(e.message), 'err', 9000); }
 }
@@ -164,12 +164,29 @@ async function mapaPNG(foco, todos, op = {}) {
   return { url: c.toDataURL('image/jpeg', 0.88), w: W, h: H };
 }
 
+
+/* QR de autenticidad: el informe se emite en el servidor (código XXXX-XXXX-XXXX) y el QR abre la página pública. */
+async function emision(I, op) {
+  if (!op.subir) return null;
+  try {
+    await cargar('lib/qrcode-1.4.4.js');
+    const em = await HR.apiOk('emitir', { id: I.id });
+    const url = new URL('v/?c=' + em.codigo, location.href.replace(/[#?].*$/, '')).href;
+    const qr = window.qrcode(0, 'M'); qr.addData(url); qr.make();
+    const n = qr.getModuleCount(), esc2 = 10, mg = 4, c = document.createElement('canvas'); c.width = c.height = (n + mg * 2) * esc2;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#0A2A4A';
+    for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) g.fillRect((k + mg) * esc2, (r + mg) * esc2, esc2, esc2);
+    return { codigo: em.codigo, url, corta: url.replace(/^https?:\/\//, '').replace(/\?c=.*/, ''), png: c.toDataURL('image/png'), fecha: em.fecha };
+  } catch (e) { HR.toast('El informe se generará sin código de verificación: ' + HR.esc(e.message), 'err', 8000); return null; }
+}
+
 /* ====================================================================== PDF */
 async function pdf(I, op) {
   const p = HR.progreso('Preparando el PDF…');
   try {
     await cargar('lib/jspdf-2.5.2.min.js'); await cargar('lib/jspdf-autotable-3.8.4.min.js');
     p.set(0.05); const dims = await prepararFotos(I, p); const logo = await logoPNG();
+    p.set(0.12, 'Registrando el código de verificación…'); const em = await emision(I, op);
     const g = I.general, C = HR.C;
     const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
     doc.setProperties({ title: I.id + ' · ' + (g.proyecto || ''), subject: 'Informe de inspección de redes', author: C.EMPRESA, creator: 'HYDRO-ROV Análisis' });
@@ -206,6 +223,14 @@ async function pdf(I, op) {
     doc.setFillColor(...NAVY); doc.roundedRect(M, y, CW, 17, 2, 2, 'F');
     celdas.forEach(([l, v], i) => { const x = M + 5 + i * (CW / 4); fuente('normal', 7.4, [160, 205, 222]); doc.text(txtPDF(l.toUpperCase()), x, y + 6); fuente('bold', 10, [255, 255, 255]); doc.text(txtPDF(v), x, y + 12.3); });
     y += 25;
+    if (em) { /* recuadro de verificación en la portada */
+      doc.setDrawColor(...LINEA); doc.setFillColor(...SUAVE); doc.roundedRect(M, y - 4, CW, 30, 2, 2, 'FD');
+      doc.addImage(em.png, 'PNG', W - M - 27, y - 2.5, 26, 26);
+      fuente('bold', 9.6, NAVY); doc.text('Documento verificable', M + 5, y + 3);
+      fuente('normal', 8.6, TX); doc.text(doc.splitTextToSize('Escanee el código QR o ingrese a la dirección para comprobar que este informe fue emitido por HYDRO-ROV y consultar su contenido original.', CW - 45), M + 5, y + 8.5);
+      fuente('bold', 10.5, [19, 122, 153]); doc.text('Código ' + em.codigo, M + 5, y + 20); fuente('normal', 8, MUT); doc.text(txtPDF(em.corta), M + 5, y + 24.5);
+      y += 32;
+    }
 
     titulo('1.  Información general'); kv(datosGenerales(g));
     if (g.notasCampo) parrafo(g.notasCampo);
@@ -290,11 +315,11 @@ async function pdf(I, op) {
       fuente('normal', 8, MUT); doc.text(txtPDF(I.id + ' · ' + (HR.fFecha(g.fechaInforme) || '')), W - M, 17.6, { align: 'right' });
       doc.setDrawColor(...CYAN); doc.setLineWidth(0.5); doc.line(M, 22, W - M, 22);
       doc.setDrawColor(...LINEA); doc.setLineWidth(0.2); doc.line(M, 284, W - M, 284);
-      fuente('normal', 7.6, MUT); doc.text(txtPDF(C.EMPRESA + ' · ' + C.LEMA + ' · ' + C.WEB), M, 289);
+      fuente('normal', 7.6, MUT); doc.text(txtPDF(em ? C.EMPRESA + ' · Verificación ' + em.codigo + ' en ' + em.corta : C.EMPRESA + ' · ' + C.LEMA + ' · ' + C.WEB), M, 289);
       doc.text(`Página ${i} de ${n}`, W - M, 289, { align: 'right' });
     }
     p.set(0.9, 'Generando el archivo…');
-    await entregar(I, doc.output('blob'), 'pdf', op, p);
+    await entregar(I, doc.output('blob'), 'pdf', op, p, em);
   } finally { p.fin(); }
 }
 
@@ -306,6 +331,7 @@ async function docx(I, op) {
     const D = window.docx, g = I.general, C = HR.C;
     const { Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType, AlignmentType, Header, Footer, PageNumber, BorderStyle, ShadingType, TabStopType, VerticalAlign, TableLayoutType } = D;
     p.set(0.05); const dims = await prepararFotos(I, p); const logo = await logoPNG();
+    p.set(0.12, 'Registrando el código de verificación…'); const em = await emision(I, op);
     const CWd = 9638, PX = 642; // ancho útil: twips y píxeles (A4, márgenes de 2 cm)
     const AZ = '0A2A4A', CI = '36B5D6', GR = '6B7684', LN = 'E3E8EE';
     const sinBorde = { top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }, right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' } };
@@ -335,6 +361,16 @@ async function docx(I, op) {
       rows: [new TableRow({ children: cel.map(([l, v]) => new TableCell({ width: { size: CWd / 4, type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, color: 'auto', fill: AZ }, margins: { top: 120, bottom: 120, left: 160, right: 100 },
         children: [new Paragraph({ children: [new TextRun({ text: l, size: 14, color: 'A0CDDE' })] }), new Paragraph({ children: [new TextRun({ text: v, size: 20, bold: true, color: 'FFFFFF' })] })] })) })] }));
 
+    if (em) {
+      cuerpo.push(P('', { after: 120 }), new Table({ width: { size: CWd, type: WidthType.DXA }, columnWidths: [CWd - 1900, 1900], layout: TableLayoutType.FIXED, borders: bordes,
+        rows: [new TableRow({ children: [
+          new TableCell({ width: { size: CWd - 1900, type: WidthType.DXA }, shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'F4F7FA' }, margins: { top: 140, bottom: 140, left: 200, right: 160 }, verticalAlign: VerticalAlign.CENTER, children: [
+            new Paragraph({ children: [new TextRun({ text: 'Documento verificable', bold: true, size: 20, color: AZ })] }),
+            new Paragraph({ spacing: { before: 60, after: 80 }, children: [new TextRun({ text: 'Escanee el código QR o ingrese a la dirección para comprobar que este informe fue emitido por HYDRO-ROV y consultar su contenido original.', size: 17 })] }),
+            new Paragraph({ children: [new TextRun({ text: 'Código ' + em.codigo, bold: true, size: 22, color: '137A99' })] }),
+            new Paragraph({ children: [new TextRun({ text: em.corta, size: 15, color: GR })] })] }),
+          new TableCell({ width: { size: 1900, type: WidthType.DXA }, verticalAlign: VerticalAlign.CENTER, margins: { top: 60, bottom: 60, left: 60, right: 60 }, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [img(em.png, 112, 112, 'png')] })] })] })] }));
+    }
     cuerpo.push(H1('1.  Información general'), ...kv(datosGenerales(g)));
     if (g.notasCampo) cuerpo.push(...parrafos(g.notasCampo));
     const conCam = I.tramos.filter((t) => HR.camOk(t.cIni) || HR.camOk(t.cFin));
@@ -408,12 +444,12 @@ async function docx(I, op) {
         headers: { default: new Header({ children: [new Paragraph({ tabStops: [{ type: TabStopType.RIGHT, position: CWd }], border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: CI, space: 6 } },
           children: [img(logo.url, lw, lh, 'png'), new TextRun({ text: '\tINFORME DE INSPECCIÓN DE REDES', bold: true, size: 16, color: AZ }), new TextRun({ text: '  ' + I.id + ' · ' + (HR.fFecha(g.fechaInforme) || ''), size: 15, color: GR })] })] }) },
         footers: { default: new Footer({ children: [new Paragraph({ tabStops: [{ type: TabStopType.RIGHT, position: CWd }], border: { top: { style: BorderStyle.SINGLE, size: 4, color: LN, space: 6 } },
-          children: [new TextRun({ text: C.EMPRESA + ' · ' + C.LEMA + ' · ' + C.WEB, size: 14, color: GR }), new TextRun({ children: ['\tPágina ', PageNumber.CURRENT, ' de ', PageNumber.TOTAL_PAGES], size: 14, color: GR })] })] }) },
+          children: [new TextRun({ text: em ? C.EMPRESA + ' · Verificación ' + em.codigo + ' en ' + em.corta : C.EMPRESA + ' · ' + C.LEMA + ' · ' + C.WEB, size: 14, color: GR }), new TextRun({ children: ['\tPágina ', PageNumber.CURRENT, ' de ', PageNumber.TOTAL_PAGES], size: 14, color: GR })] })] }) },
         children: cuerpo
       }]
     });
     p.set(0.9, 'Generando el archivo…');
-    await entregar(I, await Packer.toBlob(doc), 'docx', op, p);
+    await entregar(I, await Packer.toBlob(doc), 'docx', op, p, em);
   } finally { p.fin(); }
 }
 

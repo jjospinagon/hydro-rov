@@ -3,7 +3,7 @@
    ("Implementar → Nueva implementación → Aplicación web"). Ver servidor/LEEME-DESPLIEGUE.md. */
 window.HR_CONFIG = {
   API: 'https://script.google.com/macros/s/AKfycbxDtSfDfOumorJ-Te3V5kxxGuvotUDPm-04A05pSCAnOGXVLZkADqlSwTsvFjZYf1VG/exec',
-  VERSION: '1.3.0 · 2026-11-25',
+  VERSION: '1.4.0 · 2026-11-25',
   EMPRESA: 'HYDRO-ROV',
   LEMA: 'Inspección de redes con sonda y equipo robotizado',
   WEB: 'hydro-rov.com',

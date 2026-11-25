@@ -3,55 +3,16 @@
 'use strict';
 (function () {
 const C = window.HR_CONFIG || {};
+const { esc, nf, fmtT, fFecha, leerGMS, aGMS, camOk, camTxt, GRADOS, CATALOGO, COD, ESTADOS, perfilSVG } = window.HRC;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ico = (n, cls = 'i') => `<svg class="${cls}"><use href="#i-${n}"/></svg>`;
 const uid = (p = '') => p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const nf = (v, d = 2) => (v == null || v === '' || isNaN(v) ? '' : Number(v).toLocaleString('es-CO', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const pn = (s) => { if (s == null) return null; const t = String(s).trim().replace(/\s/g, '').replace(',', '.'); if (t === '') return null; const n = Number(t); return isFinite(n) ? n : null; };
 const hoy = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
-const fmtT = (s) => { if (s == null || isNaN(s)) return ''; s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(x).padStart(2, '0'); };
 const pT = (t) => { t = String(t || '').trim(); if (!t) return null; const p = t.split(':').map(Number); if (p.some(isNaN)) return null; return p.reduce((a, b) => a * 60 + b, 0); };
-const fFecha = (iso) => { if (!iso) return ''; const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(iso + 'T12:00:00') : new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }); };
 const hace = (iso) => { const d = (Date.now() - new Date(iso)) / 1000; if (!(d >= 0)) return ''; if (d < 60) return 'hace un momento'; if (d < 3600) return 'hace ' + Math.floor(d / 60) + ' min'; if (d < 86400) return 'hace ' + Math.floor(d / 3600) + ' h'; return fFecha(iso); };
-
-/* ============================================================ coordenadas en grados, minutos y segundos */
-/* Acepta 75°14'36", 75 14 36, 75°14'36.5"W, -75.2433, 4,5339 … Devuelve {v: valor absoluto en grados decimales, h: hemisferio escrito o null}. */
-function leerGMS(txt) {
-  let t = String(txt || '').trim().toUpperCase().replace(/[′’´`]/g, "'").replace(/[″”]|''/g, '"').replace(/º/g, '°');
-  if (!t) return null;
-  const hm = /([NSEWO])\s*$/.exec(t) || /^\s*([NSEWO])/.exec(t); const h = hm ? hm[1] : null;
-  const neg = /^\s*-/.test(t);
-  t = t.replace(/[NSEWO]/g, ' ').replace(/^\s*-/, '');
-  const nums = (t.match(/\d+(?:[.,]\d+)?/g) || []).map((x) => Number(x.replace(',', '.')));
-  if (!nums.length || nums.length > 3 || nums.some(isNaN)) return null;
-  const [g, m = 0, sg = 0] = nums;
-  if (nums.length > 1 && (m >= 60 || sg >= 60 || g % 1)) return null;
-  return { v: g + m / 60 + sg / 3600, h: h || (neg ? '-' : null) };
-}
-function aGMS(dec, tipo, sinHemi) {
-  if (dec == null || dec === '' || isNaN(dec)) return '';
-  const a = Math.abs(Number(dec)); let g = Math.floor(a), m = Math.floor((a - g) * 60), sg = Math.round(((a - g) * 60 - m) * 600) / 10;
-  if (sg >= 60) { sg = 0; m++; } if (m >= 60) { m = 0; g++; }
-  const h = tipo === 'lat' ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'O' : 'E');
-  return `${g}°${String(m).padStart(2, '0')}'${sg.toFixed(1).padStart(4, '0').replace('.', ',')}"` + (sinHemi ? '' : ' ' + h);
-}
-const camOk = (c) => !!(c && c.lat != null && c.lon != null && !isNaN(c.lat) && !isNaN(c.lon));
-const camTxt = (c) => (camOk(c) ? aGMS(c.lat, 'lat') + '  ' + aGMS(c.lon, 'lon') : '');
-
-/* ============================================================ catálogo */
-const GRADOS = [
-  { g: 0, n: 'Sin grado', c: '#6b7890' }, { g: 1, n: 'Muy leve', c: '#3aa76d' }, { g: 2, n: 'Leve', c: '#94c140' },
-  { g: 3, n: 'Moderado', c: '#e7b43a' }, { g: 4, n: 'Grave', c: '#ec7a35' }, { g: 5, n: 'Crítico', c: '#e0443e' }];
-const CATALOGO = [
-  { grupo: 'Estructural', items: [['GL', 'Grieta longitudinal'], ['GC', 'Grieta circunferencial'], ['GM', 'Grietas múltiples'], ['FL', 'Fractura longitudinal'], ['FC', 'Fractura circunferencial'], ['FM', 'Fracturas múltiples'], ['RT', 'Rotura con desprendimiento'], ['HU', 'Hueco o perforación'], ['DF', 'Deformación de la sección'], ['CP', 'Colapso'], ['DJ', 'Desplazamiento de junta'], ['SJ', 'Separación de junta'], ['DS', 'Desgaste o corrosión superficial'], ['RV', 'Falla del revestimiento']] },
-  { grupo: 'Operacional', items: [['RA', 'Raíces'], ['IN', 'Infiltración'], ['SE', 'Sedimentos o depósitos'], ['GR', 'Grasa adherida'], ['IC', 'Incrustaciones'], ['OB', 'Obstáculo u objeto extraño'], ['EM', 'Empozamiento o contrapendiente'], ['NA', 'Nivel de agua alto']] },
-  { grupo: 'Conexiones y construcción', items: [['CX', 'Conexión domiciliaria'], ['CXP', 'Conexión penetrante'], ['CXD', 'Conexión defectuosa'], ['CM', 'Cambio de material'], ['CD', 'Cambio de diámetro'], ['RP', 'Reparación existente'], ['UN', 'Junta o unión (referencia)']] },
-  { grupo: 'Inspección', items: [['INI', 'Inicio de inspección'], ['FIN', 'Llegada a pozo / fin de tramo'], ['FA', 'Fin anticipado de inspección'], ['CAM', 'Cámara bajo el agua'], ['NT', 'Nota general']] }];
-const COD = {}; CATALOGO.forEach((g) => g.items.forEach(([k, n]) => { COD[k] = { n, grupo: g.grupo }; }));
-const ESTADOS = { BORRADOR: 'Borrador', REVISION: 'En revisión', EMITIDO: 'Emitido' };
 
 const GEN = [
   { k: 'proyecto', l: 'Proyecto u objeto de la inspección', w: 'w4', ph: 'Ej.: Inspección CCTV de redes de alcantarillado sanitario, barrio Comuneros' },
@@ -92,9 +53,9 @@ function abrirModal(html, ancho) {
   /* contenedor nuevo en cada apertura: así no se acumulan oyentes de modales anteriores */
   const viejo = $('#modal-doc'), d = viejo.cloneNode(false); viejo.replaceWith(d);
   d.className = 'doc' + (ancho ? ' ancho' : ''); d.innerHTML = html;
-  $('#modal').classList.add('on'); return d;
+  $('#modal').classList.add('on'); document.body.classList.add('con-modal'); return d;
 }
-function cerrarModal() { $('#modal').classList.remove('on'); $('#modal-doc').innerHTML = ''; }
+function cerrarModal() { document.body.classList.remove('con-modal'); $('#modal').classList.remove('on'); $('#modal-doc').innerHTML = ''; }
 function confirmar(titulo, texto, boton = 'Confirmar', peligro = false) {
   return new Promise((res) => {
     const d = abrirModal(`<div class="mh"><h3>${esc(titulo)}</h3></div><div class="mb"><p style="color:var(--mut)">${texto}</p></div>
@@ -449,7 +410,8 @@ function pintarListaTramos() {
   const box = $('#tr-lista'); if (!box) return;
   box.innerHTML = S.inf.tramos.map((t, i) => `<button type="button" class="tr-it${t.id === S.tramoSel ? ' on' : ''}" data-tramo="${t.id}">
       <div><div class="pz">${esc(etiquetaTramo(t))}</div><div class="me">Tramo ${i + 1} · ${t.obs.length} obs.${t.longitud ? ' · ' + nf(t.longitud) + ' m' : ''}${t.video && t.video.id ? ' · video' : ''}</div></div><span class="gd" style="background:${colorTramo(t)}"></span></button>`).join('')
-    + '<button type="button" class="tr-it tr-nuevo solo-ed" data-ta="nuevo">' + ico('mas') + 'Agregar tramo</button>';
+    + '<button type="button" class="tr-it tr-nuevo solo-ed" data-ta="nuevo">' + ico('mas') + 'Agregar tramo</button>'
+    + '<button type="button" class="tr-it tr-nuevo solo-ed" data-ta="importar">' + ico('doc') + 'Importar tramos de Excel</button>';
 }
 function pintarTramos() {
   const t = tramoActual();
@@ -475,10 +437,10 @@ function consolaHTML(t) {
   const v = t.video, sv = S.subidasVideo[t.id];
   return `<div class="consola" id="consola" tabindex="0" aria-label="Consola de video del tramo">
     <div class="barra"><span>TRAMO <b id="cv-tramo">${esc(etiquetaTramo(t))}</b></span><span id="cv-info">${v ? esc(v.nombre) + (v.tamano ? ' · ' + nf(v.tamano / 1048576, 0) + ' MB' : '') : 'Sin video'}</span>
-      <span class="der"><span id="cv-drive">${estadoVideoTxt(t)}</span>
+      <span class="der"><button type="button" class="cz solo-ed" data-vc="zona" title="Marcar dónde está el contador de metros en el video">${ico('lapiz')}<span id="cv-zona">${zonaOCR() ? 'Contador: listo' : 'Marcar contador'}</span></button><span id="cv-drive">${estadoVideoTxt(t)}</span>
       ${v ? `<button type="button" class="solo-ed" data-ta="quitarVideo" title="Quitar video del tramo" style="background:none;border:0;color:#9fb6cc;display:grid;place-items:center">${ico('x')}</button>` : ''}</span></div>
     <div class="subida"><i id="cv-barra" style="width:${sv && sv.estado === 'subiendo' ? Math.round(sv.p * 100) : 0}%"></i></div>
-    <div class="pantalla" id="pantalla"><video id="vid" playsinline preload="metadata"></video><div class="hudv" id="vhud"></div><div class="flash" id="flash"></div>
+    <div class="pantalla" id="pantalla"><video id="vid" playsinline preload="metadata"></video><div class="zona-ocr hide" id="zona-ocr"></div><div class="zona-sel hide" id="zona-sel"><div class="zona-tip">Arrastre un recuadro sobre los metros del contador (por ejemplo «12.34M»)</div></div><div class="hudv" id="vhud"></div><div class="flash" id="flash"></div>
       <div class="soltar" id="soltar"><div><div class="ojo">${ico('video')}</div>
         <h4>${v && v.id ? 'Video guardado en Drive' : 'Cargue el video del tramo'}</h4>
         <p>${v && v.id ? 'Ábralo desde Drive o cárguelo desde este equipo para capturar fotogramas.' : 'Arrástrelo aquí o elíjalo. Mientras lo revisa, se guarda en Drive. También puede trabajar solo con fotos.'}</p>
@@ -512,7 +474,8 @@ function montarVideo(t) {
   $('#soltar').classList.toggle('hide', !!lv);
   if (lv) { vid.src = lv.url; vid.playbackRate = lv.vel || 1; $('#vc-vel').textContent = (lv.vel || 1) + '×'; }
   vid.addEventListener('timeupdate', actualizarTiempo);
-  vid.addEventListener('loadedmetadata', () => { actualizarTiempo(); pintarMarcas(); });
+  vid.addEventListener('loadedmetadata', () => { actualizarTiempo(); pintarMarcas(); pintarZona(); });
+  window.addEventListener('resize', pintarZona);
   vid.addEventListener('play', () => { $('#vc-play').innerHTML = ico('pausa'); });
   vid.addEventListener('pause', () => { $('#vc-play').innerHTML = ico('play'); });
   const so = $('#soltar');
@@ -624,8 +587,10 @@ function capturar() {
   $('#flash').classList.remove('on'); void $('#flash').offsetWidth; $('#flash').classList.add('on');
   const o = nuevaObs(t, { tiempo: Math.round(vid.currentTime * 10) / 10 });
   ponerFoto(o, url);
+  const recorte = recorteZona(vid);   // el contador se lee del fotograma capturado
   pintarObs(); pintarMarcas(); pintarPerfil(); pintarListaTramos(); marcarSucio();
   fichaHallazgo([o.id], 0, { video: true });
+  if (recorte) leerDistancia(o, recorte);
 }
 function nuevaObs(t, extra) {
   const o = Object.assign({ id: uid('o'), dist: null, tiempo: null, codigo: '', desc: '', hIni: '', hFin: '', grado: 0, continuo: false, distFin: null, foto: null }, extra || {});
@@ -690,6 +655,281 @@ $('#p-tramos').addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowRight') { e.preventDefault(); vid.pause(); vid.currentTime += e.shiftKey ? 5 : 1 / 30; }
 });
 
+
+/* ------------------------------------------------------------ lectura automática del contador de metros (OCR)
+   El equipo imprime los metros recorridos sobre el video. Se marca una vez dónde está ese contador; en cada captura
+   se recorta esa zona del fotograma y se lee con Tesseract (en el navegador, sin enviar nada a terceros). */
+const ZKEY = 'hr_ocr_zona';
+function zonaOCR() {
+  const z = S.inf && S.inf.general && S.inf.general.ocrZona;
+  if (z && z.w > 0) return z;
+  try { const g = JSON.parse(localStorage.getItem(ZKEY) || 'null'); if (g && g.w > 0) return g; } catch (e) { /* nada */ }
+  return null;
+}
+function marcoVideo(vid) { /* rectángulo real del video dentro del elemento (object-fit: contain) */
+  const r = vid.getBoundingClientRect(), vw = vid.videoWidth || 16, vh = vid.videoHeight || 9, k = Math.min(r.width / vw, r.height / vh);
+  return { x: r.left + (r.width - vw * k) / 2, y: r.top + (r.height - vh * k) / 2, w: vw * k, h: vh * k, k };
+}
+function pintarZona() {
+  const vid = $('#vid'), z = zonaOCR(), el = $('#zona-ocr'); if (!vid || !el) return;
+  if (!z || !vid.videoWidth) { el.classList.add('hide'); return; }
+  const m = marcoVideo(vid), pr = $('#pantalla').getBoundingClientRect();
+  Object.assign(el.style, { left: (m.x - pr.left + z.x * m.w) + 'px', top: (m.y - pr.top + z.y * m.h) + 'px', width: z.w * m.w + 'px', height: z.h * m.h + 'px' });
+  el.classList.remove('hide');
+}
+function marcarZona() {
+  const vid = $('#vid'); if (!vid || !vid.videoWidth) { toast('Cargue primero el video del tramo.'); return; }
+  vid.pause();
+  const sel = $('#zona-sel'); sel.classList.remove('hide'); $('#zona-ocr').classList.add('hide');
+  let ini = null, caja = null;
+  const fin = () => { sel.classList.add('hide'); sel.onpointerdown = sel.onpointermove = sel.onpointerup = null; if (caja) caja.remove(); pintarZona(); };
+  sel.onpointerdown = (e) => { sel.setPointerCapture(e.pointerId); ini = [e.clientX, e.clientY]; caja = document.createElement('div'); caja.className = 'zona-ocr'; sel.appendChild(caja); };
+  sel.onpointermove = (e) => {
+    if (!ini) return; const pr = sel.getBoundingClientRect();
+    Object.assign(caja.style, { left: Math.min(ini[0], e.clientX) - pr.left + 'px', top: Math.min(ini[1], e.clientY) - pr.top + 'px', width: Math.abs(e.clientX - ini[0]) + 'px', height: Math.abs(e.clientY - ini[1]) + 'px' });
+  };
+  sel.onpointerup = (e) => {
+    if (!ini) return fin();
+    const m = marcoVideo(vid), x0 = Math.min(ini[0], e.clientX), y0 = Math.min(ini[1], e.clientY), w = Math.abs(e.clientX - ini[0]), h = Math.abs(e.clientY - ini[1]);
+    if (w < 12 || h < 8) { toast('Recuadro muy pequeño. Arrastre sobre todo el número del contador.'); return fin(); }
+    const z = { x: Math.max(0, (x0 - m.x) / m.w), y: Math.max(0, (y0 - m.y) / m.h), w: Math.min(1, w / m.w), h: Math.min(1, h / m.h) };
+    S.inf.general.ocrZona = z; try { localStorage.setItem(ZKEY, JSON.stringify(z)); } catch (er) { /* nada */ }
+    marcarSucio(); fin(); $('#cv-zona').textContent = 'Contador: listo';
+    const r = recorteZona(vid);
+    if (r) calibrarZona(r);
+  };
+}
+function recorteZona(vid) {
+  const z = zonaOCR(); if (!z || !vid || !vid.videoWidth) return null;
+  const sx = z.x * vid.videoWidth, sy = z.y * vid.videoHeight, sw = Math.max(4, z.w * vid.videoWidth), sh = Math.max(4, z.h * vid.videoHeight);
+  const k = Math.max(1, Math.min(4, 110 / sh)), c = document.createElement('canvas');
+  c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+  const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(vid, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+let ocrMotor = null;
+function motorOCR() {
+  if (ocrMotor) return ocrMotor;
+  const base = new URL('lib/ocr/', location.href).href;
+  ocrMotor = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = 'lib/ocr/tesseract.min.js';
+    s.onerror = () => rej(new Error('No se pudo cargar el lector del contador'));
+    s.onload = async () => {
+      try {
+        const w = await window.Tesseract.createWorker('eng', 1, { workerPath: base + 'worker.min.js', corePath: base, langPath: base.replace(/\/$/, ''), gzip: true, cacheMethod: 'none' });
+        await w.setParameters({ tessedit_char_whitelist: '0123456789.,', tessedit_pageseg_mode: '7' });
+        res(w);
+      } catch (e) { rej(e); }
+    };
+    document.head.appendChild(s);
+  });
+  ocrMotor.catch(() => { ocrMotor = null; });
+  return ocrMotor;
+}
+function binarizar(src, claro) { /* deja el texto negro sobre blanco; claro=true para contadores de letras claras (lo usual) */
+  const w = src.width, h = src.height, im = src.getContext('2d').getImageData(0, 0, w, h), d = im.data;
+  let mx = 0, mn = 255; const L = new Float32Array(w * h);
+  for (let i = 0; i < L.length; i++) { const v = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; L[i] = v; if (v > mx) mx = v; if (v < mn) mn = v; }
+  const umbral = claro ? Math.max(150, mx - 45) : Math.min(105, mn + 45);
+  for (let i = 0; i < L.length; i++) { const tinta = claro ? L[i] >= umbral : L[i] <= umbral, x = tinta ? 0 : 255; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = x; d[i * 4 + 3] = 255; }
+  const c = document.createElement('canvas'), pad = 16; c.width = w + pad * 2; c.height = h + pad * 2;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.putImageData(im, pad, pad);
+  return c;
+}
+function numeroDe(txt) {
+  const m = String(txt || '').replace(/\s+/g, '').replace(/,/g, '.').match(/\d{1,4}(?:\.\d{1,3})?/g);
+  if (!m) return null;
+  const n = m.map(Number).filter((x) => x >= 0 && x <= 2000).sort((a, b) => String(b).length - String(a).length)[0];
+  return n == null ? null : Math.round(n * 100) / 100;
+}
+async function ocrUna(c, claro) {
+  const w = await motorOCR(), r = await w.recognize(binarizar(c, claro)), n = numeroDe(r.data.text);
+  const cs = (r.data.symbols || []).map((x) => x.confidence).sort((a, b) => a - b), conf = cs.length ? cs[Math.floor(cs.length / 2)] : 0;
+  return n != null && conf >= 55 ? { n, conf, claro } : null;
+}
+async function leerCanvas(c) {
+  const z = zonaOCR();
+  if (z && typeof z.claro === 'boolean') { const r = await ocrUna(c, z.claro); return r ? r.n : null; }
+  const rs = (await Promise.all([ocrUna(c, true), ocrUna(c, false)])).filter(Boolean).sort((a, b) => b.conf - a.conf);
+  return rs.length ? rs[0].n : null;
+}
+async function calibrarZona(c) { /* el inspector confirma una vez qué número muestra el contador; así se fija cómo leerlo */
+  const p = progreso('Leyendo el contador…'); p.set(0.5);
+  let cands = [];
+  try { cands = (await Promise.all([ocrUna(c, true), ocrUna(c, false)])).filter(Boolean); } catch (e) { console.warn(e); }
+  p.fin();
+  const unicos = cands.filter((x, i) => cands.findIndex((y) => y.n === x.n) === i);
+  const guardar = (claro) => { const z = Object.assign({}, zonaOCR(), { claro }); S.inf.general.ocrZona = z; try { localStorage.setItem(ZKEY, JSON.stringify(z)); } catch (e) { /* nada */ } marcarSucio(); };
+  if (!unicos.length) { toast('Zona guardada, pero no se pudo leer un número ahí. Ajuste el recuadro para que encierre solo los metros del contador.', 'err', 8000); return; }
+  const d = abrirModal(`<div class="mh"><h3>¿Qué distancia muestra el contador?</h3></div><div class="mb"><p style="color:var(--mut);margin-bottom:12px">Se confirma una sola vez por equipo. Toque el valor que se ve ahora en el video.</p>
+    <img src="${c.toDataURL()}" alt="Recorte del contador" style="max-width:100%;border-radius:8px;border:1px solid var(--line2);margin-bottom:14px;background:#000">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${unicos.map((x, i) => `<button class="btn pri" data-cal="${i}" style="font-family:var(--mono);font-size:16px">${nf(x.n)} m</button>`).join('')}<button class="btn" data-cal="no">Ninguno · marcar de nuevo</button></div></div>`);
+  d.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cal]'); if (!b) return; cerrarModal();
+    if (b.dataset.cal === 'no') { marcarZona(); return; }
+    guardar(unicos[Number(b.dataset.cal)].claro);
+    toast('Listo: desde ahora cada captura llena la distancia leyendo el contador.', 'ok', 6000);
+  });
+}
+S.ocr = {};
+function notaOCR(o) {
+  const st = S.ocr[o.id];
+  if (st && st.e === 'leyendo') return `<span class="spin mini"></span>Leyendo el contador del video…`;
+  if (st && st.e === 'ok') return `${ico('cam', 'i mini')}Leído del contador: <b>${nf(st.v)} m</b>. Confírmelo; si no coincide, corríjalo.`;
+  if (st && st.e === 'falla') return `No se pudo leer el contador en esta captura: escriba la distancia.`;
+  if (o.tiempo != null && !zonaOCR()) return `Para que la distancia se llene sola, marque una vez el contador del video con <b>Marcar contador</b>.`;
+  return '';
+}
+async function leerDistancia(o, recorte) {
+  S.ocr[o.id] = { e: 'leyendo' }; refrescarNotaOCR(o);
+  let v = null;
+  try { v = await leerCanvas(recorte); } catch (e) { console.warn(e); }
+  S.ocr[o.id] = v != null ? { e: 'ok', v } : { e: 'falla' };
+  if (v != null && o.dist == null) {
+    o.dist = v; marcarSucio(); pintarPerfil();
+    const i = $('#fx-dist'); if (i && $('#fx-ocr') && $('#fx-ocr').dataset.o === o.id && !i.value) { i.value = String(v).replace('.', ','); i.classList.add('leido'); }
+  }
+  refrescarNotaOCR(o);
+}
+HR.ocr = { recorteZona, binarizar, motorOCR, numeroDe };   /* para diagnóstico desde la consola */
+function refrescarNotaOCR(o) { const n = $('#fx-ocr'); if (n && n.dataset.o === o.id) n.innerHTML = notaOCR(o); }
+
+
+/* ------------------------------------------------------------ importar tramos desde Excel o CSV */
+let xlsxListo = null;
+function cargarXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  if (!xlsxListo) xlsxListo = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'lib/xlsx-0.20.3.min.js'; s.onload = res; s.onerror = () => { xlsxListo = null; rej(new Error('No se pudo cargar el lector de Excel')); }; document.head.appendChild(s); });
+  return xlsxListo;
+}
+const CAMPOS_IMP = [['', '— no importar —'], ['pozoIni', 'Pozo inicial'], ['pozoFin', 'Pozo final'], ['red', 'Tipo de red'], ['material', 'Material'], ['diametro', 'Diámetro (mm)'],
+  ['longitud', 'Longitud del tramo (m)'], ['inspeccionada', 'Longitud inspeccionada (m)'], ['profIni', 'Prof. pozo inicial (m)'], ['profFin', 'Prof. pozo final (m)'], ['ubicacion', 'Dirección / ubicación'],
+  ['sentido', 'Sentido'], ['latIni', 'Latitud cámara inicial'], ['lonIni', 'Longitud (coord.) cámara inicial'], ['latFin', 'Latitud cámara final'], ['lonFin', 'Longitud (coord.) cámara final'], ['condicion', 'Condición'], ['fecha', 'Fecha']];
+function campoDeEncabezado(h) {
+  const t = norm(h).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); if (!t) return '';
+  const ini = /\b(ini|inicial|inicio|desde|aguas arriba|a)\b/.test(t), fin = /\b(fin|final|hasta|llegada|aguas abajo|b)\b/.test(t);
+  const coordCtx = /(camara|pozo|coord|gms|grados|oeste|norte|\bini|\bfin|inicial|final|desde|hasta)/.test(t);
+  if (/\blat/.test(t)) return fin ? 'latFin' : 'latIni';
+  if (/\b(lon|lng|long)\b/.test(t) || (/longitud/.test(t) && coordCtx && !/tramo|\(m\)|\bm\b|metros|inspecc/.test(t))) return fin ? 'lonFin' : 'lonIni';
+  if (/inspeccionad/.test(t)) return 'inspeccionada';
+  if (/longitud|largo|distancia/.test(t)) return 'longitud';
+  if (/prof/.test(t)) return fin ? 'profFin' : 'profIni';
+  if (/(pozo|camara|pz|nodo|desde|hasta)/.test(t)) return fin ? 'pozoFin' : ini ? 'pozoIni' : '';
+  if (/diam/.test(t)) return 'diametro';
+  if (/material/.test(t)) return 'material';
+  if (/(tipo de red|\bred\b|sistema)/.test(t)) return 'red';
+  if (/(direcc|ubicac|calle|sector|barrio)/.test(t)) return 'ubicacion';
+  if (/sentido/.test(t)) return 'sentido';
+  if (/(condicion|estado)/.test(t)) return 'condicion';
+  if (/fecha/.test(t)) return 'fecha';
+  return '';
+}
+function opcionCercana(v, ops) { const n = norm(v).trim(); if (!n) return ''; const o = ops.find((x) => x && (norm(x) === n || norm(x).startsWith(n) || n.startsWith(norm(x)))) || ops.find((x) => x && n.length >= 5 && norm(x).slice(0, 6) === n.slice(0, 6)); return o || String(v).trim(); }
+function coordDe(v, tipo) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  const r = leerGMS(v); if (!r) return null;
+  const neg = r.h === 'S' || r.h === 'W' || r.h === 'O' || r.h === '-' || (r.h == null && tipo === 'lon');   // sin hemisferio: Colombia (N y O)
+  const x = r.v * (neg ? -1 : 1);
+  return (tipo === 'lat' ? Math.abs(x) <= 90 : Math.abs(x) <= 180) ? Math.round(x * 1e6) / 1e6 : null;
+}
+function fechaDe(v) {
+  if (v instanceof Date && !isNaN(v)) { const d = new Date(v); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); }
+  const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(String(v || '').trim()); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '';
+}
+function abrirImportar() {
+  const d = abrirModal(`<div class="mh"><h3>Importar tramos desde Excel</h3><button class="btn xs fant" data-im="x">${ico('x')}</button></div>
+    <div class="mb"><p style="color:var(--mut);margin-bottom:12px">Suba el listado de tramos del catastro o del contrato (.xlsx, .xls o .csv). Cada fila crea un tramo con sus pozos, diámetro, material, longitud y coordenadas de las cámaras (en grados-minutos-segundos o decimales).</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-im="elegir">${ico('doc')}Elegir archivo</button><button class="btn" data-im="plantilla">${ico('word')}Descargar plantilla</button></div>
+      <input type="file" id="f-excel" accept=".xlsx,.xls,.csv" class="hide"><div id="im-prev" style="margin-top:14px"></div></div>
+    <div class="mf"><button class="btn" data-im="x">Cancelar</button><button class="btn pri" data-im="ok" id="im-ok" disabled>Importar</button></div>`, true);
+  let filas = [], mapa = [];
+  $('#f-excel').addEventListener('change', async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    $('#im-prev').innerHTML = '<div class="spin"></div>';
+    try {
+      await cargarXLSX();
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+      const hoja = wb.Sheets[wb.SheetNames.find((n) => !/instruc/i.test(n)) || wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(hoja, { header: 1, raw: true, defval: '' });
+      let hi = 0, mejor = -1;
+      for (let i = 0; i < Math.min(12, aoa.length); i++) { const n = aoa[i].map(campoDeEncabezado).filter(Boolean).length; if (n > mejor) { mejor = n; hi = i; } }
+      if (mejor < 2) throw new Error('No se reconocieron los encabezados. Use la plantilla o asigne las columnas a mano.');
+      const enc = aoa[hi].map((x) => String(x || '').trim());
+      mapa = enc.map(campoDeEncabezado);
+      filas = aoa.slice(hi + 1).map((r, i) => Object.assign(r, { _fila: hi + 2 + i })).filter((r) => r.some((x) => String(x).trim() !== ''));
+      pintarPrev(enc);
+    } catch (er) { $('#im-prev').innerHTML = `<div class="msg err">${esc(er.message)}</div>`; }
+  });
+  function construir() {
+    const tramos = [], avisos = [];
+    filas.forEach((r) => { const i = r._fila - 1;
+      const v = {}; mapa.forEach((k, c) => { if (k) v[k] = r[c]; });
+      if (!String(v.pozoIni || '').trim() && !String(v.pozoFin || '').trim()) { avisos.push(`Fila ${i + 1}: sin pozos, se omite.`); return; }
+      const t = nuevoTramo();
+      t.pozoIni = String(v.pozoIni || '').trim(); t.pozoFin = String(v.pozoFin || '').trim();
+      if (v.red) t.red = opcionCercana(v.red, ['Sanitaria', 'Pluvial', 'Combinada']);
+      if (v.material) t.material = opcionCercana(v.material, TR.find((x) => x.k === 'material').o);
+      if (v.sentido) t.sentido = /arriba/i.test(v.sentido) ? 'Aguas arriba' : 'Aguas abajo';
+      if (v.condicion) t.condicion = opcionCercana(v.condicion, ['Buena', 'Regular', 'Mala', 'Crítica', 'No evaluada']);
+      ['diametro', 'longitud', 'inspeccionada', 'profIni', 'profFin'].forEach((k) => { if (v[k] !== undefined && v[k] !== '') t[k] = typeof v[k] === 'number' ? v[k] : pn(String(v[k]).replace(/[^\d.,-]/g, '')); });
+      if (v.ubicacion) t.ubicacion = String(v.ubicacion).trim();
+      if (v.fecha) t.fecha = fechaDe(v.fecha) || t.fecha;
+      const la1 = coordDe(v.latIni, 'lat'), lo1 = coordDe(v.lonIni, 'lon'), la2 = coordDe(v.latFin, 'lat'), lo2 = coordDe(v.lonFin, 'lon');
+      if (la1 != null && lo1 != null) t.cIni = { lat: la1, lon: lo1 }; else if (v.latIni || v.lonIni) avisos.push(`Fila ${i + 1}: coordenadas de la cámara inicial no válidas.`);
+      if (la2 != null && lo2 != null) t.cFin = { lat: la2, lon: lo2 }; else if (v.latFin || v.lonFin) avisos.push(`Fila ${i + 1}: coordenadas de la cámara final no válidas.`);
+      tramos.push(t);
+    });
+    /* la cámara final de un tramo es la inicial del siguiente cuando comparten pozo */
+    const porPozo = {}; tramos.forEach((t) => { if (camOk(t.cIni)) porPozo[norm(t.pozoIni)] = t.cIni; if (camOk(t.cFin)) porPozo[norm(t.pozoFin)] = t.cFin; });
+    tramos.forEach((t) => { if (!camOk(t.cIni) && porPozo[norm(t.pozoIni)]) t.cIni = Object.assign({}, porPozo[norm(t.pozoIni)]); if (!camOk(t.cFin) && porPozo[norm(t.pozoFin)]) t.cFin = Object.assign({}, porPozo[norm(t.pozoFin)]); });
+    return { tramos, avisos };
+  }
+  function pintarPrev(enc) {
+    const { tramos, avisos } = construir();
+    $('#im-prev').innerHTML = `<p style="margin-bottom:8px"><b>${tramos.length}</b> tramo${tramos.length === 1 ? '' : 's'} listo${tramos.length === 1 ? '' : 's'} para importar. Revise que cada columna esté asignada al dato correcto.</p>
+      <div class="tw" style="max-height:46vh;overflow:auto"><table class="tabla im-t"><thead><tr>${enc.map((h, c) => `<th><div style="font-weight:600;color:var(--tx)">${esc(h || 'Columna ' + (c + 1))}</div><select class="inp" data-col="${c}" style="height:30px;margin-top:4px;font-size:12px">${CAMPOS_IMP.map(([k, l]) => `<option value="${k}"${mapa[c] === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></th>`).join('')}</tr></thead>
+      <tbody>${filas.slice(0, 8).map((r) => `<tr>${enc.map((_, c) => `<td>${esc(r[c] instanceof Date ? r[c].toLocaleDateString('es-CO') : r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      ${filas.length > 8 ? `<p class="ayuda" style="margin-top:6px">…y ${filas.length - 8} fila(s) más.</p>` : ''}
+      ${avisos.length ? `<div class="msg err" style="margin-top:8px">${avisos.slice(0, 6).map(esc).join('<br>')}${avisos.length > 6 ? '<br>…' : ''}</div>` : ''}`;
+    $('#im-ok').disabled = !tramos.length; $('#im-ok').textContent = `Importar ${tramos.length} tramo${tramos.length === 1 ? '' : 's'}`;
+    $$('#im-prev select[data-col]').forEach((sl) => sl.addEventListener('change', () => { mapa[Number(sl.dataset.col)] = sl.value; pintarPrev(enc); }));
+  }
+  d.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-im]'); if (!b) return;
+    if (b.dataset.im === 'x') cerrarModal();
+    else if (b.dataset.im === 'elegir') $('#f-excel').click();
+    else if (b.dataset.im === 'plantilla') plantillaExcel().catch((er) => toast(esc(er.message), 'err'));
+    else if (b.dataset.im === 'ok') {
+      const { tramos } = construir(); if (!tramos.length) return;
+      const vacio = (t) => !t.pozoIni && !t.pozoFin && !t.obs.length && !t.video && t.longitud == null;
+      S.inf.tramos = S.inf.tramos.filter((t) => !vacio(t)).concat(tramos);
+      S.tramoSel = tramos[0].id; cerrarModal(); pintarTramos(); marcarSucio();
+      toast(`${tramos.length} tramo${tramos.length === 1 ? '' : 's'} importado${tramos.length === 1 ? '' : 's'}.`, 'ok');
+    }
+  });
+}
+async function plantillaExcel() {
+  await cargarXLSX();
+  const enc = ['Pozo inicial', 'Pozo final', 'Tipo de red', 'Material', 'Diámetro (mm)', 'Longitud del tramo (m)', 'Profundidad pozo inicial (m)', 'Profundidad pozo final (m)', 'Dirección', 'Sentido',
+    'Latitud cámara inicial', 'Longitud (coord.) cámara inicial', 'Latitud cámara final', 'Longitud (coord.) cámara final'];
+  const ej = [['PZ-01', 'PZ-02', 'Sanitaria', 'PVC', 315, 42.5, 1.8, 2.1, 'Calle 12 entre carreras 4 y 5', 'Aguas abajo', `4°33'55,8" N`, `75°45'03,6" O`, `4°33'57,0" N`, `75°45'02,8" O`],
+    ['PZ-02', 'PZ-03', 'Sanitaria', 'PVC', 315, 30, 2.1, 2.4, 'Calle 12 entre carreras 5 y 6', 'Aguas abajo', '', '', `4°33'58,1" N`, `75°45'01,9" O`]];
+  const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([enc, ...ej]);
+  ws['!cols'] = enc.map((h) => ({ wch: Math.max(14, h.length + 2) }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Tramos');
+  const ins = XLSX.utils.aoa_to_sheet([['Instrucciones · HYDRO-ROV Análisis'], [''],
+    ['1. Una fila por tramo. Pozo inicial y pozo final son obligatorios; lo demás es opcional.'],
+    ['2. Coordenadas de las cámaras en grados-minutos-segundos (4°33\'55,8" N, 75°45\'03,6" O) o en decimales (4.565500, -75.751000).'],
+    ['3. Sin hemisferio se asume Colombia: latitud norte (N) y longitud oeste (O).'],
+    ['4. Si un pozo se repite, sus coordenadas se usan en todos los tramos que lo comparten (no hace falta repetirlas).'],
+    ['5. Tipo de red: Sanitaria, Pluvial o Combinada. Material: PVC, Concreto, Gres, GRP / PRFV, Polietileno (PEAD), Asbesto-cemento…']]);
+  ins['!cols'] = [{ wch: 120 }];
+  XLSX.utils.book_append_sheet(wb, ins, 'Instrucciones');
+  XLSX.writeFile(wb, 'Plantilla tramos HYDRO-ROV.xlsx');
+}
+
 /* ------------------------------------------------------------ observaciones */
 function opcionesCodigo(v) {
   return '<option value="">— Código —</option>' + CATALOGO.map((g) => `<optgroup label="${esc(g.grupo)}">${g.items.map(([k, n]) => `<option value="${k}"${k === v ? ' selected' : ''}>${k} · ${esc(n)}</option>`).join('')}</optgroup>`).join('')
@@ -746,37 +986,6 @@ function pintarObsSoloFotos() {
   });
 }
 
-/* ------------------------------------------------------------ perfil del tramo (SVG) */
-function perfilSVG(t, op = {}) {
-  const W = 1000, H = op.alto || 200, x0 = 70, x1 = W - 70, yc = 92;
-  const maxD = Math.max(0, ...t.obs.map((o) => Math.max(o.dist || 0, o.distFin || 0)));
-  const L = Number(t.longitud) || Number(t.inspeccionada) || maxD || 10;
-  const X = (d) => x0 + (Math.max(0, Math.min(L, d)) / L) * (x1 - x0);
-  const paso = L <= 20 ? 2 : L <= 60 ? 5 : L <= 150 ? 10 : 25;
-  const f = op.fuente || 'IBM Plex Sans, Arial, sans-serif', tinta = op.claro ? '#1d2430' : '#c9d4e1', sub = op.claro ? '#6b7684' : '#7d8aa0', tubo = op.claro ? '#dfe6ee' : '#1a2940';
-  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="${f}">`;
-  s += `<rect x="${x0}" y="${yc - 9}" width="${x1 - x0}" height="18" rx="9" fill="${tubo}"/>`;
-  const insp = Number(t.inspeccionada);
-  if (insp && insp < L) s += `<rect x="${X(insp)}" y="${yc - 9}" width="${x1 - X(insp)}" height="18" fill="${op.claro ? '#f3d9d6' : '#3a1f27'}"/><text x="${(X(insp) + x1) / 2}" y="${yc + 4}" text-anchor="middle" font-size="11" fill="${op.claro ? '#a0332c' : '#f19a94'}">no inspeccionado</text>`;
-  for (let d = 0; d <= L + 0.001; d += paso) s += `<line x1="${X(d)}" x2="${X(d)}" y1="${yc + 12}" y2="${yc + 18}" stroke="${sub}"/><text x="${X(d)}" y="${yc + 31}" font-size="11" text-anchor="middle" fill="${sub}">${nf(d, 0)}</text>`;
-  s += `<text x="${(x0 + x1) / 2}" y="${yc + 48}" font-size="11" text-anchor="middle" fill="${sub}">Distancia desde ${esc(t.sentido === 'Aguas arriba' ? 'el pozo final' : 'el pozo inicial')} (m) · Longitud ${nf(L)} m</text>`;
-  [[x0, t.pozoIni || 'Inicial'], [x1, t.pozoFin || 'Final']].forEach(([x, n]) => {
-    s += `<rect x="${x - 15}" y="${yc - 30}" width="30" height="60" rx="5" fill="none" stroke="${op.claro ? '#0a2a4a' : '#5cc8e4'}" stroke-width="2.5"/><text x="${x}" y="${yc - 38}" font-size="13" font-weight="700" text-anchor="middle" fill="${tinta}">${esc(n)}</text>`;
-  });
-  const ax = t.sentido === 'Aguas arriba' ? -1 : 1, am = x0 + 60, ya = H - 14;
-  s += `<path d="M${am - 30 * ax} ${ya} L${am + 30 * ax} ${ya} M${am + 22 * ax} ${ya - 5} L${am + 30 * ax} ${ya} L${am + 22 * ax} ${ya + 5}" stroke="${sub}" stroke-width="1.5" fill="none"/><text x="${am + 42}" y="${ya + 4}" font-size="11" fill="${sub}">Sentido de la inspección: ${esc((t.sentido || 'Aguas abajo').toLowerCase())}</text>`;
-  const ob = t.obs.filter((o) => o.dist != null).slice().sort((a, b) => a.dist - b.dist);
-  ob.filter((o) => o.distFin != null && o.distFin > o.dist).forEach((o) => { s += `<rect x="${X(o.dist)}" y="${yc - 6}" width="${Math.max(2, X(o.distFin) - X(o.dist))}" height="12" fill="${GRADOS[o.grado || 0].c}" opacity=".55"/>`; });
-  let ult = -1e9, nivel = 0;
-  ob.forEach((o) => {
-    const x = X(o.dist), c = GRADOS[o.grado || 0].c; nivel = x - ult < 46 ? (nivel + 1) % 3 : 0; ult = x;
-    const yl = yc - 50 - nivel * 16;
-    const n = t.obs.indexOf(o) + 1;
-    s += `<g data-obs="${o.id}" style="cursor:pointer"><line x1="${x}" x2="${x}" y1="${yc - 9}" y2="${yl + 3}" stroke="${c}" stroke-width="1.5"/><circle cx="${x}" cy="${yc}" r="7" fill="${c}" stroke="${op.claro ? '#fff' : '#03070d'}" stroke-width="2"/>`
-      + `<text x="${x}" y="${yl}" font-size="11.5" font-weight="700" text-anchor="middle" fill="${c}">${esc(o.codigo || '#' + n)}</text></g>`;
-  });
-  return s + '</svg>';
-}
 HR.perfilSVG = perfilSVG;
 function pintarPerfil() { const b = $('#perfil'); if (b && S.inf) b.innerHTML = perfilSVG(tramoActual()); }
 $('#p-tramos').addEventListener('click', (e) => { const g = e.target.closest('#perfil [data-obs]'); if (g) enfocarObs(g.dataset.obs); });
@@ -810,6 +1019,7 @@ $('#p-tramos').addEventListener('click', async (e) => {
   if (vc) {
     const vid = $('#vid'), a = vc.dataset.vc, lv = S.videos[tramoActual().id];
     if (a === 'cap') return capturar();
+    if (a === 'zona') return marcarZona();
     if (!vid || !vid.src) { if (a !== 'cap') toast('Cargue primero el video del tramo.'); return; }
     if (a === 'play') vid.paused ? vid.play() : vid.pause();
     else if (a === '-10' || a === '+10') vid.currentTime = Math.max(0, vid.currentTime + Number(a));
@@ -845,6 +1055,7 @@ $('#p-tramos').addEventListener('click', async (e) => {
     S.inf.tramos = S.inf.tramos.filter((x) => x !== t); S.tramoSel = S.inf.tramos[0].id; pintarTramos(); marcarSucio();
   }
   else if (a === 'video') $('#f-video').click();
+  else if (a === 'importar') abrirImportar();
   else if (a === 'fotos') { S.fotoPara = null; S.trasFoto = null; $('#f-fotos').setAttribute('multiple', ''); $('#f-fotos').click(); }
   else if (a === 'sinfoto') { const o = nuevaObs(t, {}); const vid = $('#vid'); if (vid && vid.src && vid.duration) o.tiempo = Math.round(vid.currentTime * 10) / 10; pintarObs(); pintarPerfil(); pintarListaTramos(); marcarSucio(); enfocarObs(o.id, true); }
   else if (a === 'ordenar') { t.obs.sort((x, y) => (x.dist == null ? 1e9 : x.dist) - (y.dist == null ? 1e9 : y.dist)); pintarObs(); pintarPerfil(); marcarSucio(); }
@@ -983,7 +1194,9 @@ function fichaHallazgo(ids, idx, op) {
   const ob = () => obsPorId(ids[i]);
   function codigosHTML() {
     const o = ob(), q = norm(filtro), out = [];
-    CATALOGO.forEach((g) => { if (!q && g.grupo !== grupo) return; g.items.forEach(([k, n]) => { if (!q || norm(k + ' ' + n).includes(q)) out.push([k, n]); }); });
+    const raiz = q.length >= 4 ? q.slice(0, q.length - 1) : q;   /* raíz/raíces, grieta/grietas, conexión/conexiones */
+    const coincide = (k, n) => { const t = norm(k + ' ' + n); return t.includes(q) || (q.length >= 4 && t.split(/\s+/).some((w) => w.startsWith(raiz))); };
+    CATALOGO.forEach((g) => { if (!q && g.grupo !== grupo) return; g.items.forEach(([k, n]) => { if (!q || coincide(k, n)) out.push([k, n]); }); });
     if (q) { /* primero el código exacto, luego los que empiezan igual, luego por nombre */
       const peso = ([k, n]) => (norm(k) === q ? 0 : norm(k).startsWith(q) ? 1 : norm(n).startsWith(q) ? 2 : 3);
       out.sort((a, b) => peso(a) - peso(b));
@@ -1013,6 +1226,7 @@ function fichaHallazgo(ids, idx, op) {
             <label class="campo"><span>Distancia desde el pozo (m)</span><input id="fx-dist" inputmode="decimal" autocomplete="off" value="${o.dist == null ? '' : String(o.dist).replace('.', ',')}" placeholder="Ej.: 12,40"></label>
             <label class="campo"><span>Continúa hasta (m) · opcional</span><input id="fx-fin" inputmode="decimal" autocomplete="off" value="${o.distFin == null ? '' : String(o.distFin).replace('.', ',')}" placeholder="—"></label>
           </div>
+          <div class="ocr-nota" id="fx-ocr" data-o="${o.id}">${notaOCR(o)}</div>
           <div class="campo"><span>Código del hallazgo · <b id="fx-codn" style="color:var(--acc)">${o.codigo ? esc(o.codigo + ' — ' + (COD[o.codigo] ? COD[o.codigo].n : '')) : 'sin elegir'}</b></span>
             <div class="chips" id="fx-grp">${CATALOGO.map((g) => `<button type="button" class="chip${g.grupo === grupo ? ' on' : ''}" data-grp="${esc(g.grupo)}">${esc(g.grupo)}</button>`).join('')}</div>
             <input id="fx-q" class="inp" autocomplete="off" placeholder="Buscar: raíz, grieta, conexión, RA…" style="height:38px;margin:8px 0">

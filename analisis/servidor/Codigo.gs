@@ -17,7 +17,7 @@
  * Instalación: ver LEEME-DESPLIEGUE.md. Ejecutar una vez la función instalar() desde el editor para autorizar.
  */
 
-var VERSION = '1.3.0 (2026-11-25)';
+var VERSION = '1.4.0 (2026-11-25)';
 
 var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
@@ -69,6 +69,8 @@ function despachar_(q) {
   asegurarUsuarios_();
   if (a === 'estado') return { ok: true, version: VERSION };
   if (a === 'login') return login_(q);
+  if (a === 'verificar') return verificar_(q);          // público: página de autenticidad (código del QR)
+  if (a === 'verificarFotos') return verificarFotos_(q);
 
   var ses = sesion_(q.token);
   if (!ses) throw Falla_('Su sesión terminó. Ingrese de nuevo.', 'NO_AUTH');
@@ -92,6 +94,7 @@ function despachar_(q) {
     case 'videoTrozo': puede_(ses, 'editar'); return videoTrozo_(ses, q);
     case 'videoLeer': return videoLeer_(ses, q);
     case 'subirExport': puede_(ses, 'editar'); return subirExport_(ses, q);
+    case 'emitir': puede_(ses, 'editar'); return emitir_(ses, q);
     case 'enlaceDrive': return enlaceDrive_(ses, q);
     case 'usuarios': puede_(ses, 'admin'); return usuariosListar_();
     case 'usuarioGuardar': puede_(ses, 'admin'); return usuarioGuardar_(ses, q);
@@ -528,6 +531,7 @@ function eliminar_(ses, q) {
     guardarIndice_(ix);
     return { e: e, inf: inf, conteo: conteo, url: url };
   });
+  anularEmisiones_(id, ses, 'Informe eliminado' + (motivo ? ': ' + motivo : ''));
   auditar_(ses.email, 'informe_eliminado', id + (motivo ? ' · ' + motivo : ''));
   var avisados = avisarEliminacion_(ses, id, r, motivo);
   return { ok: true, avisados: avisados, mensaje: 'Informe ' + id + ' eliminado de Drive.' };
@@ -548,6 +552,7 @@ function descartar_(ses, q) {
     ix.informes = ix.informes.filter(function (x) { return x.id !== id; });
     guardarIndice_(ix);
   });
+  anularEmisiones_(id, ses, 'Informe descartado');
   auditar_(ses.email, 'informe_descartado', id);
   return { ok: true };
 }
@@ -718,7 +723,98 @@ function subirExport_(ses, q) {
   while (prev.hasNext()) prev.next().setTrashed(true);   // la versión anterior queda en la papelera
   var f = carpeta.createFile(Utilities.newBlob(b, mime, nombre));
   auditar_(ses.email, 'exportado_' + fmt, e.id);
+  var cod = String(q.codigo || '').toUpperCase();
+  if (cod) {
+    conCandado_(function () {
+      var E = leerEmisiones_(), em = E[cod];
+      if (em && em.id === e.id && !em.anulado) {
+        em.huellas = em.huellas || {};
+        em.huellas[fmt] = hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, b));
+        em.archivos = em.archivos || {}; em.archivos[fmt] = nombre;
+        guardarEmisiones_(E);
+      }
+    });
+  }
   return { ok: true, url: f.getUrl(), nombre: nombre };
+}
+
+
+/* ============================================================ emisión y verificación de autenticidad (QR)
+   Al exportar, el informe se «emite»: se congela una copia (instantánea) en _sistema/emisiones y se le asigna un código
+   aleatorio XXXX-XXXX-XXXX que va en el QR. La página pública /v/?c=CÓDIGO muestra esa versión congelada y compara la
+   huella SHA-256 de un PDF o Word con la del archivo emitido. Mientras el informe no cambie, se reutiliza el mismo código. */
+function leerEmisiones_() { return JSON.parse(archivoSistema_('_emisiones.json', '{}').getBlob().getDataAsString('UTF-8') || '{}'); }
+function guardarEmisiones_(E) { archivoSistema_('_emisiones.json', '{}').setContent(JSON.stringify(E)); }
+function carpetaEmisiones_() {
+  var id = props_().getProperty('EMI_ID');
+  if (id) { try { var f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { /* se recrea */ } }
+  var s = sistema_(), it = s.getFoldersByName('emisiones');
+  var c = it.hasNext() ? it.next() : s.createFolder('emisiones');
+  props_().setProperty('EMI_ID', c.getId());
+  return c;
+}
+function codigoEmision_() {
+  var abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', r = aleatorio_(16), t = '';
+  for (var i = 0; i < 12; i++) t += abc.charAt(parseInt(r.substr(i * 2, 2), 16) % abc.length);
+  return t.slice(0, 4) + '-' + t.slice(4, 8) + '-' + t.slice(8);
+}
+function emitir_(ses, q) {
+  var e = entradaOFalla_(q.id);
+  return conCandado_(function () {
+    var inf = leerInforme_(e), E = leerEmisiones_(), ult = null;
+    Object.keys(E).forEach(function (k) { var x = E[k]; if (x.id === e.id && !x.anulado && (!ult || x.fecha > ult.fecha)) ult = x; });
+    if (ult && ult.rev === inf.rev) return { ok: true, codigo: ult.codigo, fecha: ult.fecha, nuevo: false };
+    var cod; do { cod = codigoEmision_(); } while (E[cod]);
+    var snap = JSON.parse(JSON.stringify(inf));
+    delete snap.creadoPor; delete snap.actualizadoPor;
+    var f = carpetaEmisiones_().createFile(cod + '.json', JSON.stringify(snap), MimeType.PLAIN_TEXT);
+    E[cod] = { codigo: cod, id: e.id, rev: inf.rev, fecha: ahora_(), por: ses.user.nombre || ses.email, archivo: f.getId(),
+               fotos: e.fFotos, titulo: (inf.general || {}).proyecto || '', huellas: {}, anulado: false };
+    guardarEmisiones_(E);
+    auditar_(ses.email, 'informe_emitido', e.id + ' rev ' + inf.rev + ' · ' + cod);
+    return { ok: true, codigo: cod, fecha: E[cod].fecha, nuevo: true };
+  });
+}
+function anularEmisiones_(id, ses, motivo) {
+  conCandado_(function () {
+    var E = leerEmisiones_(), n = 0;
+    Object.keys(E).forEach(function (k) { if (E[k].id === id && !E[k].anulado) { E[k].anulado = true; E[k].anuladoFecha = ahora_(); E[k].anuladoMotivo = motivo; E[k].anuladoPor = ses.user.nombre || ses.email; n++; } });
+    if (n) guardarEmisiones_(E);
+  });
+}
+function limiteVerificacion_() {
+  var c = CacheService.getScriptCache(), k = 'VF_' + Math.floor(Date.now() / 60000), n = Number(c.get(k) || 0);
+  if (n > 240) throw Falla_('Demasiadas consultas. Intente en un minuto.');
+  c.put(k, String(n + 1), 120);
+}
+function emisionPublica_(c) {
+  c = String(c || '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(c)) return null;
+  return leerEmisiones_()[c] || null;
+}
+function verificar_(q) {
+  limiteVerificacion_();
+  var em = emisionPublica_(q.c);
+  if (!em) return { ok: false, codigo: 'NO_EXISTE', error: 'Este código no corresponde a ningún informe emitido por HYDRO-ROV.' };
+  var out = { ok: true, emision: { codigo: em.codigo, id: em.id, rev: em.rev, fecha: em.fecha, por: em.por, titulo: em.titulo,
+    huellas: em.huellas || {}, anulado: !!em.anulado, anuladoFecha: em.anuladoFecha || null, anuladoMotivo: em.anuladoMotivo || null } };
+  if (em.anulado) return out;
+  out.informe = JSON.parse(DriveApp.getFileById(em.archivo).getBlob().getDataAsString('UTF-8'));
+  var actual = entrada_(leerIndice_(), em.id);
+  out.emision.posterior = !!(actual && Number(actual.rev) > Number(em.rev));
+  return out;
+}
+function verificarFotos_(q) {
+  limiteVerificacion_();
+  var em = emisionPublica_(q.c);
+  if (!em || em.anulado) return { ok: false, error: 'Código no válido.' };
+  var snap = DriveApp.getFileById(em.archivo).getBlob().getDataAsString('UTF-8');
+  var ids = Array.isArray(q.ids) ? q.ids.slice(0, 8) : [], out = {};
+  ids.forEach(function (fid) {
+    if (!/^[A-Za-z0-9_-]{20,80}$/.test(String(fid)) || snap.indexOf('"' + fid + '"') < 0) return;   // solo fotos de esa versión
+    try { var bl = archivoDe_(fid, em.fotos).getBlob(); out[fid] = 'data:' + bl.getContentType() + ';base64,' + Utilities.base64Encode(bl.getBytes()); } catch (e) { /* ya no está */ }
+  });
+  return { ok: true, fotos: out };
 }
 
 /* ============================================================ auditoría (archivo de texto en _sistema) */
