@@ -17,7 +17,7 @@
  * Instalación: ver LEEME-DESPLIEGUE.md. Ejecutar una vez la función instalar() desde el editor para autorizar.
  */
 
-var VERSION = '1.5.0 (2026-11-25)';
+var VERSION = '1.6.0 (2026-11-25)';
 
 var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
@@ -71,6 +71,7 @@ function despachar_(q) {
   if (a === 'login') return login_(q);
   if (a === 'verificar') return verificar_(q);          // público: página de autenticidad (código del QR)
   if (a === 'verificarFotos') return verificarFotos_(q);
+  if (a === 'verificarHuella') return verificarHuella_(q);   // público: identificar un PDF/Word por su huella
 
   var ses = sesion_(q.token);
   if (!ses) throw Falla_('Su sesión terminó. Ingrese de nuevo.', 'NO_AUTH');
@@ -787,8 +788,11 @@ function subirExport_(ses, q) {
     conCandado_(function () {
       var E = leerEmisiones_(), em = E[cod];
       if (em && em.id === e.id && !em.anulado) {
+        /* cada exportación de la misma emisión agrega su huella: todos los archivos entregados siguen siendo verificables */
         em.huellas = em.huellas || {};
-        em.huellas[fmt] = hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, b));
+        var hx = hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, b)), lista = listaHuellas_(em.huellas[fmt]);
+        if (lista.indexOf(hx) < 0) lista.push(hx);
+        em.huellas[fmt] = lista.slice(-40);
         em.archivos = em.archivos || {}; em.archivos[fmt] = nombre;
         guardarEmisiones_(E);
       }
@@ -846,6 +850,20 @@ function limiteVerificacion_() {
   if (n > 240) throw Falla_('Demasiadas consultas. Intente en un minuto.');
   c.put(k, String(n + 1), 120);
 }
+function listaHuellas_(v) { return Array.isArray(v) ? v.slice() : (v ? [String(v)] : []); }
+/* Verificación por archivo: busca la emisión a la que pertenece un PDF o Word por su huella SHA-256.
+   La huella se calcula en el equipo de quien verifica; el archivo nunca se envía. */
+function verificarHuella_(q) {
+  limiteVerificacion_();
+  var h = String(q.h || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(h)) return { ok: false, error: 'Huella no válida.' };
+  var E = leerEmisiones_(), hit = null;
+  Object.keys(E).some(function (k) {
+    var hs = E[k].huellas || {};
+    return Object.keys(hs).some(function (fmt) { if (listaHuellas_(hs[fmt]).indexOf(h) >= 0) { hit = { codigo: k, formato: fmt }; return true; } return false; });
+  });
+  return hit ? { ok: true, codigo: hit.codigo, formato: hit.formato } : { ok: false, codigo: 'NO_EXISTE' };
+}
 function emisionPublica_(c) {
   c = String(c || '').trim().toUpperCase();
   if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(c)) return null;
@@ -856,7 +874,7 @@ function verificar_(q) {
   var em = emisionPublica_(q.c);
   if (!em) return { ok: false, codigo: 'NO_EXISTE', error: 'Este código no corresponde a ningún informe emitido por HYDRO-ROV.' };
   var out = { ok: true, emision: { codigo: em.codigo, id: em.id, rev: em.rev, fecha: em.fecha, por: em.por, titulo: em.titulo,
-    huellas: em.huellas || {}, anulado: !!em.anulado, anuladoFecha: em.anuladoFecha || null, anuladoMotivo: em.anuladoMotivo || null } };
+    huellas: (function (hs) { var o = {}; Object.keys(hs || {}).forEach(function (f) { o[f] = listaHuellas_(hs[f]); }); return o; })(em.huellas), anulado: !!em.anulado, anuladoFecha: em.anuladoFecha || null, anuladoMotivo: em.anuladoMotivo || null } };
   if (em.anulado) return out;
   out.informe = JSON.parse(DriveApp.getFileById(em.archivo).getBlob().getDataAsString('UTF-8'));
   var actual = entrada_(leerIndice_(), em.id);

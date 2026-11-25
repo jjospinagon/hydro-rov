@@ -57,3 +57,4 @@ Si un creador pierde su clave: en el editor de Apps Script ejecutar `reiniciarCr
 |---|---|---|
 | 1.4.0 | QR de verificación, cámaras en GMS, importación de Excel | — |
 | 1.5.0 (2026-11-25) | Carpetas por año y mes; reubica una sola vez los informes existentes; poda carpetas de mes/año vacías | Implementar → Administrar implementaciones → Editar → elegir la versión 1.4.0. Las carpetas ya movidas quedan donde están y siguen funcionando, porque el índice guarda los ids, no las rutas. |
+| 1.6.0 (2026-11-25) | Verificación por archivo (`verificarHuella`): la página pública identifica un PDF/Word por su huella o por el código que lleva dentro y avisa si fue modificado; cada exportación agrega su huella (lista) | Volver a la versión 5 (1.5.0). Las huellas guardadas como lista siguen siendo leídas por 1.5.0 solo como texto: la comparación de archivos de la página fallaría hasta volver a 1.6.0. |
