@@ -2,7 +2,7 @@
    API: URL de la aplicación web de Apps Script (termina en /exec). Se obtiene al publicar servidor/Codigo.gs
    ("Implementar → Nueva implementación → Aplicación web"). Ver servidor/LEEME-DESPLIEGUE.md. */
 window.HR_CONFIG = {
-  API: '',
+  API: 'https://script.google.com/macros/s/AKfycbxDtSfDfOumorJ-Te3V5kxxGuvotUDPm-04A05pSCAnOGXVLZkADqlSwTsvFjZYf1VG/exec',
   VERSION: '1.0.0 · 2026-11-25',
   EMPRESA: 'HYDRO-ROV',
   LEMA: 'Inspección de redes con sonda y equipo robotizado',
