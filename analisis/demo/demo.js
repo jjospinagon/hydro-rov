@@ -65,9 +65,9 @@ window.crearDemoHR = async function (avisar) {
     recomendaciones: '1. Priorizar el tramo PZ-02 → PZ-03: corte de raíces, retiro de escombros y nueva inspección completa desde PZ-03.\n2. Programar limpieza hidrodinámica en PZ-01 → PZ-02 y corregir la conexión domiciliaria de los 31,80 m.\n3. Incluir los tramos en el plan de mantenimiento preventivo con inspección de seguimiento en 12 meses.',
     anexos: 'Videos de inspección del tramo PZ-01 → PZ-02 (archivo MP4) en la carpeta del informe. Registro fotográfico completo en la carpeta «fotos».',
     firmas: [
-      { rol: 'Elaboró', nombre: 'Juan José Ospina González', cargo: 'Ingeniero civil · Esp. en Gerencia de Proyectos', matricula: '131037-0585364 QND' },
-      { rol: 'Revisó', nombre: 'Ingeniero revisor (ejemplo)', cargo: 'Interventoría', matricula: '' },
-      { rol: 'Vo. Bo.', nombre: 'Supervisor del contrato (ejemplo)', cargo: 'Empresa de servicios públicos', matricula: '' }
+      { rol: 'Elaboró', nombre: '', cargo: 'Ingeniero responsable de la inspección', matricula: '' },
+      { rol: 'Revisó', nombre: '', cargo: 'Interventoría', matricula: '' },
+      { rol: 'Vo. Bo.', nombre: '', cargo: 'Supervisor del contrato · Empresa de servicios públicos', matricula: '' }
     ]
   };
 

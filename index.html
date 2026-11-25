@@ -117,6 +117,22 @@ nav.main a:hover{color:var(--ink)}
 .corte svg{display:block;width:100%;height:auto}
 
 /* Ficha */
+.muestra{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:clamp(28px,4vw,56px);align-items:center;margin-top:72px;background:var(--tile);border-radius:24px;box-shadow:var(--shadow);padding:clamp(24px,4vw,44px)}
+.hojas{display:flex;justify-content:center;align-items:flex-end;padding:10px 0 4px;text-decoration:none}
+.hojas img{width:44%;height:auto;border-radius:4px;border:1px solid var(--line);background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08),0 16px 34px rgba(10,22,38,.16);transition:transform .35s ease}
+.hojas img:nth-child(1){transform:rotate(-4deg) translateX(18%);z-index:1}
+.hojas img:nth-child(2){transform:translateY(-10px);z-index:3}
+.hojas img:nth-child(3){transform:rotate(4deg) translateX(-18%);z-index:2}
+.hojas:hover img:nth-child(1){transform:rotate(-6deg) translateX(8%)}
+.hojas:hover img:nth-child(3){transform:rotate(6deg) translateX(-8%)}
+.hojas img{position:relative}
+.m-txt small{color:var(--teal);font-size:12.5px;letter-spacing:.08em}
+.m-txt h3{font-size:clamp(24px,2.6vw,30px);margin:10px 0 12px;letter-spacing:-.02em}
+.m-txt p{color:var(--sub)}
+.m-txt .btns{justify-content:flex-start;margin-top:24px}
+.m-txt .note{text-align:left}
+@media (max-width:820px){.muestra{grid-template-columns:minmax(0,1fr);margin-top:56px}.m-txt{text-align:center}.m-txt .btns{justify-content:center}.m-txt .note{text-align:center}}
+@media (prefers-reduced-motion:reduce){.hojas img{transition:none}}
 .ficha{background:var(--tile);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
 .ficha .top{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
 .ficha .top b{font-weight:600}.ficha .top span{color:var(--mute);font-size:14px;white-space:nowrap}
@@ -372,6 +388,7 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
     <li><div><b>Hallazgos ubicados</b><span>Cada uno con su distancia desde el pozo y su fotografía.</span></div></li>
     <li><div><b>Codificación de defectos</b><span>Según la norma que exija la entidad o el cliente.</span></div></li>
     <li><div><b>Esquema y recomendaciones</b><span>Los tramos inspeccionados y qué intervenir primero.</span></div></li>
+    <li><div><b>Código QR de verificación</b><span>La entidad comprueba en línea que el informe es auténtico y no fue modificado.</span></div></li>
    </ol>
    <figure style="margin:0" class="rv">
     <div class="ficha">
@@ -391,6 +408,23 @@ footer{background:var(--alt);border-top:1px solid var(--line);padding:56px 0 32p
     </div>
     <figcaption class="note">Ejemplo ilustrativo del formato de entrega.</figcaption>
    </figure>
+  </div>
+  <div class="muestra rv">
+   <a class="hojas" href="media/informe-muestra-hydro-rov.pdf" target="_blank" rel="noopener" aria-label="Abrir el informe de muestra en PDF">
+    <img src="media/muestra-p1.jpg" width="621" height="877" alt="Portada del informe de muestra con el código QR de verificación" loading="lazy">
+    <img src="media/muestra-p3.jpg" width="621" height="877" alt="Resultados del tramo PZ-01 a PZ-02: mapa, perfil y tabla de hallazgos" loading="lazy">
+    <img src="media/muestra-p7.jpg" width="621" height="877" alt="Registro fotográfico con hallazgos anotados" loading="lazy">
+   </a>
+   <div class="m-txt">
+    <small class="mono">INFORME DE MUESTRA · 10 PÁGINAS</small>
+    <h3>Así se ve el informe que recibe.</h3>
+    <p>Tres tramos inspeccionados con ficha técnica, ubicación de los pozos en el mapa, perfil del tramo, hallazgos con distancia, posición horaria y grado de severidad, registro fotográfico anotado, conclusiones y recomendaciones.</p>
+    <div class="btns">
+     <a class="btn pri" href="media/informe-muestra-hydro-rov.pdf" target="_blank" rel="noopener">Ver el informe (PDF)</a>
+     <a class="btn gho" href="analisis/v/?c=4LM7-7DJR-CLVR" target="_blank" rel="noopener">Verificar su código QR</a>
+    </div>
+    <p class="note">Documento de demostración: los datos y las fotografías son ilustrativos.</p>
+   </div>
   </div>
  </div>
 </section>
