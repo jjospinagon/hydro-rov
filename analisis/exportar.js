@@ -48,11 +48,20 @@ async function prepararFotos(I, p) {
   const ids = []; I.tramos.forEach((t) => t.obs.forEach((o) => { if (o.foto && o.foto.id) ids.push(o.foto.id); }));
   const falt = ids.filter((x) => !HR.S.fotos[x]);
   if (falt.length) { p.set(0.1, `Trayendo ${falt.length} fotos desde Drive…`); await HR.asegurarFotos(falt); }
+  /* toda foto se vuelve a codificar como JPEG estándar del navegador: PDF y Word la leen siempre igual (PNG, JPEG progresivos, etc.) */
   const dims = {};
-  for (const id of ids) { const src = HR.S.fotos[id]; if (src) { try { const im = await cargarImg(src); dims[id] = { w: im.naturalWidth, h: im.naturalHeight }; } catch (e) { /* sin foto */ } } }
+  for (const id of ids) {
+    const src = HR.S.fotos[id]; if (!src) continue;
+    try {
+      const im = await cargarImg(src), c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0);
+      FOTOS_OK[id] = c.toDataURL('image/jpeg', 0.88); dims[id] = { w: im.naturalWidth, h: im.naturalHeight };
+    } catch (e) { /* sin foto */ }
+  }
   return dims;
 }
-const fotoDe = (o) => (o.foto && (HR.S.fotos[o.foto.id] || HR.S.fotos[o.foto.k])) || null;
+const FOTOS_OK = {};
+const fotoDe = (o) => (o.foto && (FOTOS_OK[o.foto.id] || HR.S.fotos[o.foto.id] || HR.S.fotos[o.foto.k])) || null;
 function b64aU8(dataUrl) { const b = atob(dataUrl.split(',')[1]); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
 function blobB64(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
 async function entregar(I, blob, fmt, op, p, em) {
@@ -245,7 +254,7 @@ async function pdf(I, op) {
     tabla({ head: [['Grado', 'Severidad']], body: HR.GRADOS.slice(1).map((x) => [String(x.g), x.n]), tableWidth: 70,
       didParseCell: (d) => { if (d.section === 'body' && d.column.index === 0) { d.cell.styles.fillColor = hexRGB(HR.GRADOS[Number(d.cell.raw)].c); d.cell.styles.textColor = [255, 255, 255]; d.cell.styles.fontStyle = 'bold'; d.cell.styles.halign = 'center'; } } });
 
-    titulo('3.  Resultados por tramo');
+    espacio(95); titulo('3.  Resultados por tramo');
     let nFoto = 0;
     for (let ti = 0; ti < I.tramos.length; ti++) {
       const t = I.tramos[ti]; p.set(0.25 + 0.55 * (ti / I.tramos.length), `Armando el tramo ${ti + 1} de ${I.tramos.length}…`);
@@ -259,14 +268,15 @@ async function pdf(I, op) {
       const pf = await perfilPNG(t), ph = CW * (pf.h / pf.w);
       espacio(ph + 4); doc.setDrawColor(...LINEA); doc.setLineWidth(0.2); doc.rect(M, y, CW, ph + 2); doc.addImage(pf.url, 'PNG', M + 1, y + 1, CW - 2, ph); y += ph + 6;
       if (t.obs.length) {
-        tabla({ head: [['#', 'Dist. (m)', 'Código', 'Descripción', 'Hora', 'Grado']],
+        espacio(30);
+        tabla({ rowPageBreak: 'avoid', head: [['#', 'Dist. (m)', 'Código', 'Descripción', 'Hora', 'Grado']],
           body: t.obs.map((o, i) => [String(i + 1), HR.nf(o.dist) + (o.distFin != null ? ' – ' + HR.nf(o.distFin) : ''), (o.codigo || '') + (HR.COD[o.codigo] ? '\n' + HR.COD[o.codigo].n : ''), o.desc || '', o.hIni ? o.hIni + (o.hFin ? ' a ' + o.hFin : '') : '', o.grado ? String(o.grado) : '—'].map(txtPDF)),
           columnStyles: { 0: { cellWidth: 7, halign: 'center' }, 1: { cellWidth: 20 }, 2: { cellWidth: 38 }, 4: { cellWidth: 15 }, 5: { cellWidth: 13, halign: 'center' } },
           didParseCell: (d) => { if (d.section === 'body' && d.column.index === 5 && Number(d.cell.raw)) { d.cell.styles.fillColor = hexRGB(HR.GRADOS[Number(d.cell.raw)].c); d.cell.styles.textColor = [255, 255, 255]; d.cell.styles.fontStyle = 'bold'; } } });
       } else parrafo('Sin observaciones registradas en el tramo.', 'italic');
       const conF = t.obs.map((o, i) => ({ o, i, src: fotoDe(o) })).filter((x) => x.src);
       if (conF.length) {
-        espacio(10); fuente('bold', 9.6, NAVY); doc.text('Registro fotográfico', M, y + 4); y += 7;
+        espacio(((CW - 6) / 2) * 0.75 + 34); fuente('bold', 9.6, NAVY); doc.text('Registro fotográfico', M, y + 4); y += 7;
         const gap = 6, cw = (CW - gap) / 2;
         for (let k = 0; k < conF.length; k += 2) {
           const fila = conF.slice(k, k + 2);
@@ -294,6 +304,7 @@ async function pdf(I, op) {
     titulo('5.  Recomendaciones'); parrafo(I.recomendaciones || '—');
     if (I.anexos) { titulo('6.  Anexos'); parrafo(I.anexos); }
     const FIR = firmasDe(I);
+    espacio(Math.min(Math.ceil(FIR.length / 2) * 38 + 6, 200));
     for (let k = 0; k < FIR.length; k += 2) {
       espacio(36); y += 6;
       FIR.slice(k, k + 2).forEach((f, j) => {

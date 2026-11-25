@@ -352,6 +352,7 @@ function setTab(t, sinHash) {
   $$('#v-editor .panel').forEach((p) => p.classList.toggle('on', p.id === 'p-' + t));
   if (t === 'vista') pintarVista();
   if (t === 'general' && mapaU) setTimeout(() => mapaU.invalidateSize(), 60);
+  if (t === 'tramos' && mapaT) setTimeout(() => { const tr = tramoActual(); if (tr) dibujarTramo(tr, true); }, 60);
   if (t === 'tramos') pintarPerfil();
   if (!sinHash) history.replaceState(null, '', '#informe/' + S.inf.id + '/' + t);
 }
