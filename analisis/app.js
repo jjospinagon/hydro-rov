@@ -65,7 +65,9 @@ function toast(html, tipo = '', ms = 4200) {
   $('#toasts').appendChild(t); setTimeout(() => t.remove(), ms); return t;
 }
 function abrirModal(html, ancho) {
-  const d = $('#modal-doc'); d.className = 'doc' + (ancho ? ' ancho' : ''); d.innerHTML = html;
+  /* contenedor nuevo en cada apertura: así no se acumulan oyentes de modales anteriores */
+  const viejo = $('#modal-doc'), d = viejo.cloneNode(false); viejo.replaceWith(d);
+  d.className = 'doc' + (ancho ? ' ancho' : ''); d.innerHTML = html;
   $('#modal').classList.add('on'); return d;
 }
 function cerrarModal() { $('#modal').classList.remove('on'); $('#modal-doc').innerHTML = ''; }
@@ -81,8 +83,9 @@ function progreso(texto) {
   document.body.appendChild(el);
   return { set(p, t) { el.querySelector('i').style.width = Math.round(Math.max(0, Math.min(1, p)) * 100) + '%'; if (t) el.querySelector('.t').textContent = t; }, fin() { el.remove(); } };
 }
-$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal' && !$('#modal-doc .lienzo')) cerrarModal(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#modal').classList.contains('on') && !$('#modal-doc .lienzo')) cerrarModal(); });
+const modalFijo = () => !!$('#modal-doc .lienzo, #modal-doc .ficha');
+$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal' && !modalFijo()) cerrarModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#modal').classList.contains('on') && !modalFijo()) cerrarModal(); });
 
 /* ============================================================ servidor */
 async function api(action, data = {}, opt = {}) {
@@ -449,7 +452,8 @@ function consolaHTML(t) {
       <button type="button" class="cb" data-vc="full" title="Pantalla completa">${ico('pant')}</button>
       <span class="esp"></span>
       <button type="button" class="capturar solo-ed" data-vc="cap" title="Capturar fotograma como observación (C)">${ico('cam')}Capturar hallazgo</button>
-    </div></div>`;
+    </div>
+    <div class="guia solo-ed"><b>Cómo se trabaja:</b> reproduzca el video y, donde vea un daño, toque <b>Capturar hallazgo</b> (o la tecla <b>C</b>). El video se detiene y se abre la ficha: distancia, código, grado, posición horaria y descripción. Al guardar, el video sigue. Con <b>Fotos</b> cada imagen abre su ficha, una tras otra. Puede combinar video y fotos en el mismo tramo.</div></div>`;
 }
 function estadoVideoTxt(t) {
   const sv = S.subidasVideo[t.id], v = t.video;
@@ -576,7 +580,7 @@ function capturar() {
   const o = nuevaObs(t, { tiempo: Math.round(vid.currentTime * 10) / 10 });
   ponerFoto(o, url);
   pintarObs(); pintarMarcas(); pintarPerfil(); pintarListaTramos(); marcarSucio();
-  enfocarObs(o.id, true);
+  fichaHallazgo([o.id], 0, { video: true });
 }
 function nuevaObs(t, extra) {
   const o = Object.assign({ id: uid('o'), dist: null, tiempo: null, codigo: '', desc: '', hIni: '', hFin: '', grado: 0, continuo: false, distFin: null, foto: null }, extra || {});
@@ -621,13 +625,16 @@ async function comprimir(file, max = 1600, q = 0.86) {
   } finally { URL.revokeObjectURL(url); }
 }
 async function cargarFotos(files) {
-  const t = tramoActual(), ims = files.filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|heic|webp)$/i.test(f.name));
-  for (const f of ims) {
-    try { const url = await comprimir(f); const o = nuevaObs(t, {}); ponerFoto(o, url); }
+  const t = tramoActual(), ims = files.filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name)), ids = [];
+  const p = ims.length > 2 ? progreso('Preparando las fotos…') : null;
+  for (let k = 0; k < ims.length; k++) {
+    try { const url = await comprimir(ims[k]); const o = nuevaObs(t, {}); ponerFoto(o, url); ids.push(o.id); }
     catch (e) { toast(esc(e.message), 'err'); }
+    if (p) p.set((k + 1) / ims.length, `Preparando las fotos… ${k + 1} de ${ims.length}`);
   }
+  if (p) p.fin();
   pintarObs(); pintarPerfil(); pintarListaTramos(); marcarSucio();
-  if (ims.length) toast(`${ims.length} foto${ims.length > 1 ? 's' : ''} agregada${ims.length > 1 ? 's' : ''} como observaciones. Complete distancia, código y grado.`);
+  if (ids.length) fichaHallazgo(ids, 0, { fotos: true });
 }
 $('#p-tramos').addEventListener('keydown', (e) => {
   if (!e.target.closest('#consola') || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
@@ -652,7 +659,7 @@ function pintarObs() {
     const src = fotoSrc(o);
     return `<div class="ob${S.focoObs === o.id ? ' foco' : ''}" data-obs="${o.id}">
       <div class="ft" data-oa="anotar" title="${o.foto ? 'Ver o anotar la foto' : 'Agregar foto'}">${src ? `<img src="${src}" alt="">` : o.foto && o.foto.id ? '<span>Cargando…</span>' : '<span>' + ico('foto') + '<br>Sin foto</span>'}
-        <span class="nro">#${i + 1}${o.tiempo != null ? ' · ' + fmtT(o.tiempo) : ''}</span>${o.foto && !o.foto.id ? '<span class="pend">Subiendo a Drive…</span>' : ''}</div>
+        <span class="nro">#${i + 1}${o.tiempo != null ? ' · ' + fmtT(o.tiempo) : ''}</span>${(o.dist == null || !o.codigo) && !(o.foto && !o.foto.id) ? '<span class="falta">Completar ficha</span>' : ''}${o.foto && !o.foto.id ? '<span class="pend">Subiendo a Drive…</span>' : ''}</div>
       <div class="cps">
         <label><span>Distancia (m)</span><input data-b="o:dist" data-n="1" inputmode="decimal" value="${o.dist == null ? '' : String(o.dist).replace('.', ',')}" placeholder="0,00"></label>
         <label title="Solo sirve para volver a ese punto del video; no sale en el informe"><span>Minuto (solo app)</span><input data-b="o:tiempo" data-tiempo="1" value="${esc(fmtT(o.tiempo))}" placeholder="mm:ss"></label>
@@ -663,6 +670,7 @@ function pintarObs() {
         <div class="c4"><span style="display:block;font-size:11px;color:var(--mut2);margin-bottom:4px">Grado de severidad</span><div class="grados">${GRADOS.map((g) => `<button type="button" data-grado="${g.g}" class="${Number(o.grado || 0) === g.g ? 'on' : ''}" style="${Number(o.grado || 0) === g.g ? 'background:' + g.c : ''}" title="${g.n}">${g.g || '—'}</button>`).join('')}</div></div>
       </div>
       <div class="acc">${o.tiempo != null ? `<button type="button" class="btn xs fant" data-oa="ir" title="Ir a este punto del video">${ico('ir')}</button>` : ''}
+        <button type="button" class="btn xs fant solo-ed" data-oa="ficha" title="Abrir la ficha del hallazgo">${ico('lapiz')}</button>
         <button type="button" class="btn xs fant solo-ed" data-oa="borrar" title="Eliminar observación">${ico('basura')}</button></div></div>`;
   }).join('');
 }
@@ -774,9 +782,9 @@ $('#p-tramos').addEventListener('click', async (e) => {
       const t = tramoActual(); t.obs = t.obs.filter((x) => x !== o);
       if (o.foto && o.foto.id) api('borrarFoto', { id: S.inf.id, fileId: o.foto.id }).catch(() => {});
       pintarObs(); pintarPerfil(); pintarMarcas(); pintarListaTramos(); marcarSucio();
-    } else if (a === 'anotar') {
-      if (fotoSrc(o)) anotar(o);
-      else if (!esLector()) { S.fotoPara = o; $('#f-fotos').removeAttribute('multiple'); $('#f-fotos').click(); }
+    } else if (a === 'anotar' || a === 'ficha') {
+      if (esLector()) { if (fotoSrc(o)) anotar(o); }
+      else fichaHallazgo([o.id], 0, {});
     }
     return;
   }
@@ -792,7 +800,7 @@ $('#p-tramos').addEventListener('click', async (e) => {
     S.inf.tramos = S.inf.tramos.filter((x) => x !== t); S.tramoSel = S.inf.tramos[0].id; pintarTramos(); marcarSucio();
   }
   else if (a === 'video') $('#f-video').click();
-  else if (a === 'fotos') { S.fotoPara = null; $('#f-fotos').setAttribute('multiple', ''); $('#f-fotos').click(); }
+  else if (a === 'fotos') { S.fotoPara = null; S.trasFoto = null; $('#f-fotos').setAttribute('multiple', ''); $('#f-fotos').click(); }
   else if (a === 'sinfoto') { const o = nuevaObs(t, {}); const vid = $('#vid'); if (vid && vid.src && vid.duration) o.tiempo = Math.round(vid.currentTime * 10) / 10; pintarObs(); pintarPerfil(); pintarListaTramos(); marcarSucio(); enfocarObs(o.id, true); }
   else if (a === 'ordenar') { t.obs.sort((x, y) => (x.dist == null ? 1e9 : x.dist) - (y.dist == null ? 1e9 : y.dist)); pintarObs(); pintarPerfil(); marcarSucio(); }
   else if (a === 'gps') {
@@ -811,13 +819,148 @@ document.getElementById('f-fotos').addEventListener('change', async (e) => {
   if (S.fotoPara) {
     const o = S.fotoPara; S.fotoPara = null;
     try { ponerFoto(o, await comprimir(fs[0])); pintarObs(); marcarSucio(); } catch (err) { toast(esc(err.message), 'err'); }
+    if (S.trasFoto) { const f = S.trasFoto; S.trasFoto = null; f(); }
     return;
   }
   cargarFotos(fs);
 });
 
+
+/* ------------------------------------------------------------ ficha del hallazgo
+   Se abre al capturar un fotograma (el video queda en pausa y sigue al guardar) o al cargar fotos (se recorren una por una). */
+const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+function relojSVG(o) {
+  const C = 80, R = 58, ang = (h) => ((Number(h) % 12) * 30 - 90) * Math.PI / 180, P = (h, r) => [C + r * Math.cos(ang(h)), C + r * Math.sin(ang(h))];
+  const col = GRADOS[Number(o.grado) || 0].c;
+  let arco = '';
+  if (o.hIni) {
+    const a = Number(o.hIni), b = Number(o.hFin || o.hIni);
+    if (a === b) { const [x, y] = P(a, R); arco = `<circle cx="${x}" cy="${y}" r="9" fill="${col}" opacity=".9"/>`; }
+    else {
+      const sw = ((b - a + 12) % 12) * 30, [x1, y1] = P(a, R), [x2, y2] = P(b, R);
+      arco = `<path d="M${x1} ${y1} A${R} ${R} 0 ${sw > 180 ? 1 : 0} 1 ${x2} ${y2}" fill="none" stroke="${col}" stroke-width="14" stroke-linecap="round" opacity=".9"/>`;
+    }
+  }
+  let h = `<svg viewBox="0 0 160 160" class="reloj" role="group" aria-label="Posición horaria"><circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--line2)" stroke-width="14"/>${arco}
+    <circle cx="${C}" cy="${C}" r="40" fill="var(--in)" stroke="var(--line)"/><path d="M${C - 30} ${C + 22} Q${C} ${C + 12} ${C + 30} ${C + 22}" stroke="var(--mut2)" stroke-width="2" fill="none"/>
+    <text x="${C}" y="${C + 4}" text-anchor="middle" font-size="10" fill="var(--mut2)">${o.hIni ? esc(o.hIni + (o.hFin && o.hFin !== o.hIni ? '–' + o.hFin : '')) : 'toque'}</text>`;
+  for (let k = 1; k <= 12; k++) {
+    const [x, y] = P(k, R), on = String(k).padStart(2, '0') === o.hIni || String(k).padStart(2, '0') === o.hFin;
+    h += `<g data-h="${k}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="11" fill="${on ? col : 'var(--card)'}" stroke="${on ? col : 'var(--line2)'}"/><text x="${x}" y="${y + 3.6}" text-anchor="middle" font-size="10" font-weight="600" fill="${on ? '#06121c' : 'var(--tx)'}">${k}</text></g>`;
+  }
+  return h + '</svg>';
+}
+function fichaHallazgo(ids, idx, op) {
+  op = op || {};
+  const t = tramoActual();
+  let i = Math.max(0, Math.min(idx || 0, ids.length - 1)), grupo = null, filtro = '';
+  const ob = () => obsPorId(ids[i]);
+  function codigosHTML() {
+    const o = ob(), q = norm(filtro), out = [];
+    CATALOGO.forEach((g) => { if (!q && g.grupo !== grupo) return; g.items.forEach(([k, n]) => { if (!q || norm(k + ' ' + n).includes(q)) out.push([k, n]); }); });
+    if (q) { /* primero el código exacto, luego los que empiezan igual, luego por nombre */
+      const peso = ([k, n]) => (norm(k) === q ? 0 : norm(k).startsWith(q) ? 1 : norm(n).startsWith(q) ? 2 : 3);
+      out.sort((a, b) => peso(a) - peso(b));
+    }
+    return out.map(([k, n]) => `<button type="button" class="cod${o.codigo === k ? ' on' : ''}" data-cod="${k}"><b>${k}</b>${esc(n)}</button>`).join('') || '<span class="ayuda" style="margin:0">Sin coincidencias.</span>';
+  }
+  function gradosHTML() {
+    const g0 = Number(ob().grado) || 0;
+    return GRADOS.map((g) => `<button type="button" data-fg="${g.g}" class="${g0 === g.g ? 'on' : ''}" style="${g0 === g.g ? 'background:' + g.c + ';border-color:' + g.c : '--gc:' + g.c}"><b>${g.g || '—'}</b><span>${g.n}</span></button>`).join('');
+  }
+  function render() {
+    const o = ob(); if (!o) { terminar(); return; }
+    const n = t.obs.indexOf(o) + 1, src = fotoSrc(o);
+    grupo = grupo || (COD[o.codigo] ? COD[o.codigo].grupo : CATALOGO[0].grupo);
+    const ultimo = i >= ids.length - 1;
+    const d = abrirModal(`<div class="mh"><h3>Hallazgo #${n} <span style="color:var(--mut);font-weight:500">· tramo ${esc(etiquetaTramo(t))}${ids.length > 1 ? ' · foto ' + (i + 1) + ' de ' + ids.length : ''}</span></h3><button class="btn xs fant" data-fx="cerrar" aria-label="Cerrar">${ico('x')}</button></div>
+      <div class="mb"><div class="ficha">
+        <div class="fi-izq">
+          <div class="fi-img">${src ? `<img src="${src}" alt="">` : `<div class="sin">${ico('foto')}<span>Sin foto</span></div>`}
+            ${o.tiempo != null ? `<span class="nro">${fmtT(o.tiempo)} del video</span>` : ''}${o.foto && !o.foto.id ? '<span class="pend">Subiendo a Drive…</span>' : ''}</div>
+          <div class="fi-acc">${src ? `<button type="button" class="btn sm" data-fx="anotar">${ico('lapiz')}Marcar sobre la foto</button>` : ''}<button type="button" class="btn sm" data-fx="foto">${ico('foto')}${src ? 'Cambiar foto' : 'Agregar foto'}</button></div>
+        </div>
+          <div class="fi-hr"><div><span class="lbl">Posición horaria</span><div id="fx-reloj">${relojSVG(o)}</div></div>
+            <p class="ayuda" style="margin:0">Toque la hora donde empieza el daño y luego donde termina, mirando aguas abajo (12 = clave, 6 = solera). Un solo toque marca un punto.<br><button type="button" class="btn xs" data-fx="hlimpiar" style="margin-top:8px">Borrar posición</button></p></div>
+        <div class="fi-der">
+          <div class="fi-fila">
+            <label class="campo"><span>Distancia desde el pozo (m)</span><input id="fx-dist" inputmode="decimal" autocomplete="off" value="${o.dist == null ? '' : String(o.dist).replace('.', ',')}" placeholder="Ej.: 12,40"></label>
+            <label class="campo"><span>Continúa hasta (m) · opcional</span><input id="fx-fin" inputmode="decimal" autocomplete="off" value="${o.distFin == null ? '' : String(o.distFin).replace('.', ',')}" placeholder="—"></label>
+          </div>
+          <div class="campo"><span>Código del hallazgo · <b id="fx-codn" style="color:var(--acc)">${o.codigo ? esc(o.codigo + ' — ' + (COD[o.codigo] ? COD[o.codigo].n : '')) : 'sin elegir'}</b></span>
+            <div class="chips" id="fx-grp">${CATALOGO.map((g) => `<button type="button" class="chip${g.grupo === grupo ? ' on' : ''}" data-grp="${esc(g.grupo)}">${esc(g.grupo)}</button>`).join('')}</div>
+            <input id="fx-q" class="inp" autocomplete="off" placeholder="Buscar: raíz, grieta, conexión, RA…" style="height:38px;margin:8px 0">
+            <div class="cods" id="fx-cods">${codigosHTML()}</div></div>
+          <div class="campo"><span>Grado de severidad</span><div class="fi-grados" id="fx-grados">${gradosHTML()}</div></div>
+          <label class="campo"><span>Descripción del hallazgo</span><textarea id="fx-desc" rows="3" placeholder="Qué se observa, extensión, condición…">${esc(o.desc || '')}</textarea></label>
+        </div></div></div>
+      <div class="mf"><button class="btn peligro" data-fx="descartar">${ico('basura')}Descartar</button><span style="flex:1"></span>
+        ${i > 0 ? '<button class="btn" data-fx="ant">← Anterior</button>' : ''}
+        ${op.video ? '<button class="btn" data-fx="cerrar">Guardar y quedarme</button><button class="btn pri" data-fx="seguir">' + ico('play') + 'Guardar y seguir el video</button>'
+          : !ultimo ? '<button class="btn" data-fx="cerrar">Guardar y cerrar</button><button class="btn pri" data-fx="sig">Guardar · siguiente foto →</button>'
+          : '<button class="btn pri" data-fx="cerrar">Guardar</button>'}</div>`, true);
+    enlazar(d);
+    setTimeout(() => { const x = $('#fx-dist'); if (x && !matchMedia('(pointer:coarse)').matches) x.focus(); }, 60);
+  }
+  function enlazar(d) {
+    const o = ob();
+    const numero = (el, k) => el.addEventListener('input', () => { o[k] = pn(el.value); pintarPerfil(); marcarSucio(); });
+    numero($('#fx-dist'), 'dist'); numero($('#fx-fin'), 'distFin');
+    $('#fx-desc').addEventListener('input', (e) => { o.desc = e.target.value; marcarSucio(); });
+    $('#fx-q').addEventListener('input', (e) => { filtro = e.target.value; $$('#fx-grp .chip').forEach((x) => x.classList.toggle('on', !filtro && x.dataset.grp === grupo)); $('#fx-cods').innerHTML = codigosHTML(); });
+    $('#fx-dist').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#fx-q').focus(); } });
+    $('#fx-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = $('#fx-cods .cod'); if (b) b.click(); } });
+    d.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); terminar(); }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); const b = d.querySelector('.mf .btn.pri'); if (b) b.click(); }
+    });
+    d.addEventListener('click', (e) => {
+      const c = e.target.closest('[data-cod]'), g = e.target.closest('[data-grp]'), fg = e.target.closest('[data-fg]'), h = e.target.closest('[data-h]'), fx = e.target.closest('[data-fx]');
+      if (c) {
+        o.codigo = c.dataset.cod; if (COD[o.codigo] && COD[o.codigo].grupo === 'Inspección') { o.grado = 0; $('#fx-grados').innerHTML = gradosHTML(); }
+        $('#fx-codn').textContent = o.codigo + ' — ' + COD[o.codigo].n; $$('#fx-cods .cod').forEach((x) => x.classList.toggle('on', x === c));
+        pintarPerfil(); marcarSucio(); if (!o.desc) $('#fx-desc').focus();
+      } else if (g) { grupo = g.dataset.grp; filtro = ''; $('#fx-q').value = ''; $$('#fx-grp .chip').forEach((x) => x.classList.toggle('on', x === g)); $('#fx-cods').innerHTML = codigosHTML(); }
+      else if (fg) { o.grado = Number(fg.dataset.fg); $('#fx-grados').innerHTML = gradosHTML(); $('#fx-reloj').innerHTML = relojSVG(o); pintarPerfil(); marcarSucio(); }
+      else if (h) {
+        const v = String(h.dataset.h).padStart(2, '0');
+        if (!o.hIni || (o.hIni && o.hFin)) { o.hIni = v; o.hFin = ''; } else o.hFin = v;
+        $('#fx-reloj').innerHTML = relojSVG(o); marcarSucio();
+      } else if (fx) accion(fx.dataset.fx);
+    });
+  }
+  function terminar(seguir) {
+    cerrarModal();
+    pintarObs(); pintarPerfil(); pintarMarcas(); pintarListaTramos(); marcarSucio();
+    const o = ob(); if (o) enfocarObs(o.id);
+    if (seguir) { const v = $('#vid'); if (v && v.src) { $('#consola').scrollIntoView({ behavior: 'smooth', block: 'start' }); v.play(); } }
+    const incompletas = ids.map(obsPorId).filter((x) => x && (x.dist == null || !x.codigo)).length;
+    if (incompletas) toast(`${incompletas} hallazgo${incompletas > 1 ? 's quedan' : ' queda'} sin distancia o sin código: aparece${incompletas > 1 ? 'n' : ''} marcado${incompletas > 1 ? 's' : ''} con «Completar ficha».`);
+  }
+  async function accion(a) {
+    const o = ob();
+    if (a === 'cerrar') terminar();
+    else if (a === 'seguir') terminar(true);
+    else if (a === 'sig') { i++; grupo = null; filtro = ''; render(); }
+    else if (a === 'ant') { i--; grupo = null; filtro = ''; render(); }
+    else if (a === 'hlimpiar') { o.hIni = ''; o.hFin = ''; $('#fx-reloj').innerHTML = relojSVG(o); marcarSucio(); }
+    else if (a === 'anotar') { cerrarModal(); anotar(o, () => fichaHallazgo(ids, i, op)); }
+    else if (a === 'foto') { S.fotoPara = o; S.trasFoto = () => fichaHallazgo(ids, i, op); $('#f-fotos').removeAttribute('multiple'); $('#f-fotos').click(); }
+    else if (a === 'descartar') {
+      t.obs = t.obs.filter((x) => x !== o);
+      if (o.foto && o.foto.id) api('borrarFoto', { id: S.inf.id, fileId: o.foto.id }).catch(() => {});
+      S.cola = S.cola.filter((q) => q.o !== o);
+      ids.splice(i, 1); marcarSucio();
+      if (!ids.length) { cerrarModal(); pintarObs(); pintarPerfil(); pintarMarcas(); pintarListaTramos(); toast('Hallazgo descartado.'); }
+      else { i = Math.min(i, ids.length - 1); grupo = null; render(); }
+    }
+  }
+  render();
+}
+
 /* ------------------------------------------------------------ anotación de fotos */
-function anotar(o) {
+function anotar(o, alCerrar) {
+  const salir = () => { cerrarModal(); if (alCerrar) alCerrar(); };
   const src = fotoSrc(o), lect = esLector();
   const d = abrirModal(`<div class="mh"><h3>Foto · ${esc(o.codigo ? o.codigo + ' — ' + (COD[o.codigo] ? COD[o.codigo].n : '') : 'observación')}${o.dist != null ? ' · ' + nf(o.dist) + ' m' : ''}</h3><button class="btn xs fant" data-m="x">${ico('x')}</button></div>
     <div class="mb">${lect ? '' : `<div class="herr">
@@ -856,11 +999,11 @@ function anotar(o) {
     const h = e.target.closest('[data-h]'), c = e.target.closest('[data-c]'), m = e.target.closest('[data-m]');
     if (h) { if (h.dataset.h === 'deshacer') { formas.pop(); dibujar(); return; } herr = h.dataset.h; $$('.herr [data-h]', d).forEach((x) => x.classList.toggle('on', x === h)); }
     if (c) { color = c.dataset.c; $$('.herr .col', d).forEach((x) => x.classList.toggle('on', x === c)); }
-    if (m && m.dataset.m === 'x') cerrarModal();
-    if (m && m.dataset.m === 'cambiar') { cerrarModal(); S.fotoPara = o; $('#f-fotos').removeAttribute('multiple'); $('#f-fotos').click(); }
+    if (m && m.dataset.m === 'x') salir();
+    if (m && m.dataset.m === 'cambiar') { cerrarModal(); S.trasFoto = alCerrar || null; S.fotoPara = o; $('#f-fotos').removeAttribute('multiple'); $('#f-fotos').click(); }
     if (m && m.dataset.m === 'ok') {
-      if (!formas.length) { cerrarModal(); return; }
-      ponerFoto(o, cv.toDataURL('image/jpeg', 0.9)); cerrarModal(); pintarObs(); marcarSucio(); toast('Anotación guardada. La foto original se conserva en Drive.', 'ok');
+      if (!formas.length) { salir(); return; }
+      ponerFoto(o, cv.toDataURL('image/jpeg', 0.9)); salir(); pintarObs(); marcarSucio(); toast('Anotación guardada. La foto original se conserva en Drive.', 'ok');
     }
   });
 }
