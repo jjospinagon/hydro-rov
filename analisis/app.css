@@ -417,6 +417,9 @@ fieldset[disabled] .solo-ed{display:none!important}
 }
 @media (max-height:560px) and (orientation:landscape){.ficha{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr)}.fi-img{aspect-ratio:16/10}.fi-hr{grid-template-columns:120px 1fr}.reloj{width:120px;height:120px}.cods{max-height:120px}
   .modal .doc.ancho{height:100dvh;display:flex;flex-direction:column}.modal .doc.ancho .mb{flex:1;overflow:auto}}
+.aviso-nuevo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px 14px;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.08);border-radius:12px;font-size:13px;color:var(--mut)}
+.aviso-nuevo span{flex:1;min-width:220px;display:flex;gap:8px;align-items:flex-start}.aviso-nuevo b{color:var(--tx);margin-right:4px}.aviso-nuevo .i{color:var(--warn);margin-top:1px}
+.aviso-nuevo.hide{display:none!important}
 /* roles */
 body:not(.es-creador) .solo-creador{display:none!important}
 body.es-lector .solo-editor,body.es-lector .solo-ed{display:none!important}

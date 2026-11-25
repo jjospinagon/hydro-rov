@@ -17,7 +17,7 @@
  * Instalación: ver LEEME-DESPLIEGUE.md. Ejecutar una vez la función instalar() desde el editor para autorizar.
  */
 
-var VERSION = '1.0.0 (2026-11-25)';
+var VERSION = '1.1.0 (2026-11-25)';
 
 var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
@@ -83,7 +83,8 @@ function despachar_(q) {
     case 'crear': puede_(ses, 'editar'); return crear_(ses, q);
     case 'guardar': puede_(ses, 'editar'); return guardar_(ses, q);
     case 'duplicar': puede_(ses, 'editar'); return duplicar_(ses, q);
-    case 'eliminar': puede_(ses, 'admin'); return eliminar_(ses, q);
+    case 'eliminar': puede_(ses, 'editar'); return eliminar_(ses, q);
+    case 'descartar': puede_(ses, 'editar'); return descartar_(ses, q);
     case 'subirFoto': puede_(ses, 'editar'); return subirFoto_(ses, q);
     case 'obtenerFotos': return obtenerFotos_(ses, q);
     case 'borrarFoto': puede_(ses, 'editar'); return borrarFoto_(ses, q);
@@ -473,16 +474,83 @@ function duplicar_(ses, q) {
   return crear_(ses, { informe: inf });
 }
 
+/* Eliminar un informe: borra su carpeta de Drive (informe, fotos, videos, exportados) y avisa por correo a los
+   demás creadores. Puede eliminar: un CREADOR (cualquier informe) o un EDITOR (solo los informes que él creó).
+   Para evitar borrados por error, el cliente debe enviar el código del informe escrito por el usuario. */
 function eliminar_(ses, q) {
-  return conCandado_(function () {
-    var ix = leerIndice_(), id = String(q.id || ''), e = entrada_(ix, id);
-    if (!e) throw Falla_('Ese informe ya no existe.');
+  var id = String(q.id || '');
+  if (String(q.confirmacion || '').trim().toUpperCase() !== id.toUpperCase()) throw Falla_('Escriba el código del informe para confirmar.');
+  var motivo = txt_(q.motivo, 400);
+  var r = conCandado_(function () {
+    var ix = leerIndice_(), e = entrada_(ix, id);
+    if (!e) throw Falla_('Ese informe ya no existe.', 'NO_EXISTE');
+    var inf = {};
+    try { inf = leerInforme_(e); } catch (err) { /* informe dañado: se borra igual */ }
+    if (ses.user.rol !== 'CREADOR' && inf.creadoPor !== ses.email) throw Falla_('Solo los creadores, o quien creó el informe, pueden eliminarlo.', 'PERMISO');
+    var conteo = { fotos: 0, videos: 0, exportados: 0 };
+    [['fotos', e.fFotos], ['videos', e.fVideos], ['exportados', e.fExport]].forEach(function (par) {
+      try { var it = DriveApp.getFolderById(par[1]).getFiles(); while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) conteo[par[0]]++; } } catch (err) { /* sin carpeta */ }
+    });
+    var url = '';
+    try { var c = DriveApp.getFolderById(e.carpeta); url = c.getUrl(); c.setTrashed(true); } catch (err) { /* ya no está */ }
+    ix.informes = ix.informes.filter(function (x) { return x.id !== id; });
+    guardarIndice_(ix);
+    return { e: e, inf: inf, conteo: conteo, url: url };
+  });
+  auditar_(ses.email, 'informe_eliminado', id + (motivo ? ' · ' + motivo : ''));
+  var avisados = avisarEliminacion_(ses, id, r, motivo);
+  return { ok: true, avisados: avisados, mensaje: 'Informe ' + id + ' eliminado de Drive.' };
+}
+
+/* Descartar: deshace la creación de un informe en su primera apertura (la app solo lo ofrece antes de salir del informe).
+   Sin aviso por correo porque nadie más lo ha trabajado. El servidor exige que lo haya creado el mismo usuario y que
+   sea reciente; pasado ese punto se usa «eliminar». */
+function descartar_(ses, q) {
+  var id = String(q.id || '');
+  conCandado_(function () {
+    var ix = leerIndice_(), e = entrada_(ix, id);
+    if (!e) throw Falla_('Ese informe ya no existe.', 'NO_EXISTE');
+    var inf = leerInforme_(e);
+    if (inf.creadoPor !== ses.email) throw Falla_('Solo quien creó el informe puede descartarlo.', 'PERMISO');
+    if (Date.now() - new Date(inf.creado).getTime() > 12 * 3600000) throw Falla_('Este informe ya no se puede descartar; use «Eliminar».', 'PERMISO');
     try { DriveApp.getFolderById(e.carpeta).setTrashed(true); } catch (err) { /* ya no está */ }
     ix.informes = ix.informes.filter(function (x) { return x.id !== id; });
     guardarIndice_(ix);
-    auditar_(ses.email, 'informe_a_papelera', id);
-    return { ok: true, mensaje: 'El informe quedó en la papelera de Drive (se puede recuperar durante 30 días).' };
   });
+  auditar_(ses.email, 'informe_descartado', id);
+  return { ok: true };
+}
+
+function avisarEliminacion_(ses, id, r, motivo) {
+  var U = usuarios_(), dest = Object.keys(U).filter(function (m) { return U[m].rol === 'CREADOR' && U[m].activo !== false && m !== ses.email; });
+  if (!dest.length) return [];
+  var g = (r.inf && r.inf.general) || {}, tramos = (r.inf && r.inf.tramos) || [], nobs = 0;
+  tramos.forEach(function (t) { nobs += (t.obs || []).length; });
+  var cuando = Utilities.formatDate(new Date(), 'America/Bogota', "dd/MM/yyyy 'a las' HH:mm");
+  var quien = (ses.user.nombre || ses.email) + ' (' + ses.email + ')';
+  var esc = function (x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var fila = function (k, v) { return v ? '<tr><td style="padding:6px 12px 6px 0;color:#5b6573;white-space:nowrap">' + k + '</td><td style="padding:6px 0;color:#1d2430">' + esc(v) + '</td></tr>' : ''; };
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;color:#1d2430">'
+    + '<div style="border-bottom:3px solid #36B5D6;padding-bottom:10px;margin-bottom:16px"><b style="font-size:20px;color:#36B5D6">HYDRO</b><b style="font-size:20px;color:#0A2A4A">-ROV</b>'
+    + '<span style="color:#6b7684;font-size:12px;margin-left:8px">Análisis de inspección</span></div>'
+    + '<h2 style="font-size:17px;color:#0A2A4A;margin:0 0 8px">Se eliminó el informe ' + esc(id) + '</h2>'
+    + '<p style="margin:0 0 14px;color:#3c4652">' + esc(quien) + ' eliminó este informe el ' + esc(cuando) + '. Su carpeta de Drive se borró junto con las fotos, los videos y los archivos exportados.</p>'
+    + '<table style="border-collapse:collapse;font-size:14px;margin-bottom:14px">'
+    + fila('Proyecto', g.proyecto) + fila('Cliente', g.cliente) + fila('Municipio', g.municipio) + fila('Fecha de inspección', g.fechaInspeccion)
+    + fila('Estado', r.inf && r.inf.estado) + fila('Tramos', String(tramos.length)) + fila('Observaciones', String(nobs))
+    + fila('Archivos borrados', r.conteo.fotos + ' fotos · ' + r.conteo.videos + ' videos · ' + r.conteo.exportados + ' exportados')
+    + fila('Motivo', motivo || 'No se indicó') + '</table>'
+    + '<p style="font-size:12.5px;color:#6b7684;margin:0">La carpeta queda en la papelera de Google Drive de ' + esc(CFG.CREADORES[0].email) + ' durante 30 días; después Google la borra de forma definitiva. Si la eliminación no era esperada, pídale que la restaure desde la papelera.</p></div>';
+  var texto = 'Se eliminó el informe ' + id + ' (' + (g.proyecto || 'sin título') + ').\n' + quien + ' lo eliminó el ' + cuando + '.\nMotivo: ' + (motivo || 'No se indicó')
+    + '\nArchivos borrados: ' + r.conteo.fotos + ' fotos, ' + r.conteo.videos + ' videos, ' + r.conteo.exportados + ' exportados.'
+    + '\nLa carpeta queda 30 días en la papelera de Drive de ' + CFG.CREADORES[0].email + '.';
+  var enviados = [];
+  dest.forEach(function (m) {
+    try { MailApp.sendEmail({ to: m, subject: 'HYDRO-ROV · Se eliminó el informe ' + id, body: texto, htmlBody: html, name: 'HYDRO-ROV Análisis' }); enviados.push(m); }
+    catch (err) { console.warn('No se envió el aviso a ' + m + ': ' + err); }
+  });
+  if (enviados.length) auditar_(ses.email, 'aviso_eliminacion', id + ' → ' + enviados.join(', '));
+  return enviados;
 }
 
 function enlaceDrive_(ses, q) {
@@ -649,6 +717,7 @@ function instalar() {
     try { r.addEditor(c.email); } catch (e) { console.warn('No se compartió con ' + c.email + ': ' + e); }
   });
   UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/about?fields=user', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } });
+  console.log('Correos disponibles hoy: ' + MailApp.getRemainingDailyQuota());
   console.log('Listo. Carpeta raíz: ' + r.getUrl());
 }
 

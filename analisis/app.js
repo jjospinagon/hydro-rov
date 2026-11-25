@@ -221,6 +221,7 @@ window.addEventListener('hashchange', route);
 async function route() {
   if (!S.user) return;
   const p = (location.hash.replace(/^#/, '') || 'informes').split('/');
+  if (S.recienCreado && !(p[0] === 'informe' && decodeURIComponent(p[1] || '') === S.recienCreado)) S.recienCreado = null;
   if (p[0] === 'informe' && p[1]) return abrirInforme(decodeURIComponent(p[1]), p[2]);
   if (S.inf) await guardarAhora();
   if ((p[0] === 'usuarios' || p[0] === 'auditoria') && esCreador()) return ver(p[0]);
@@ -263,7 +264,8 @@ function pintarLista() {
     <div class="bd"><h3>${esc(x.titulo)}</h3><div class="me">${esc([x.cliente, x.municipio].filter(Boolean).join(' · ') || 'Sin cliente')}${x.fecha ? ' · ' + esc(fFecha(x.fecha)) : ''}</div>
       <div class="me">${x.tramos || 0} tramo${x.tramos === 1 ? '' : 's'} · ${x.obs || 0} observaci${x.obs === 1 ? 'ón' : 'ones'}</div>
       <div class="ft"><span class="gbar" title="Grado máximo registrado">${[1, 2, 3, 4, 5].map((g) => `<i style="${g <= (x.gradoMax || 0) ? 'background:' + GRADOS[x.gradoMax].c : ''}"></i>`).join('')}</span>
-        <span>${esc(hace(x.actualizado))}${x.actualizadoPor ? ' · ' + esc(x.actualizadoPor.split('@')[0]) : ''}</span></div></div></article>`).join('');
+        <span>${esc(hace(x.actualizado))}${x.actualizadoPor ? ' · ' + esc(x.actualizadoPor.split('@')[0]) : ''}</span>
+        <button type="button" class="btn xs fant peligro solo-editor" data-accion="eliminar" data-id="${esc(x.id)}" title="Eliminar informe">${ico('basura')}</button></div></div></article>`).join('');
   portadas(F.filter((x) => x.portada));
 }
 async function portadas(lst) {
@@ -272,7 +274,7 @@ async function portadas(lst) {
     $$(`img[data-fid="${x.portada}"]`).forEach((im) => { if (S.fotos[x.portada]) { im.src = S.fotos[x.portada]; im.onload = () => im.classList.add('ok'); } });
   }
 }
-$('#lista').addEventListener('click', (e) => { const c = e.target.closest('.inf'); if (c) location.hash = 'informe/' + c.dataset.id; });
+$('#lista').addEventListener('click', (e) => { if (e.target.closest('[data-accion]')) return; const c = e.target.closest('.inf'); if (c) location.hash = 'informe/' + c.dataset.id; });
 $('#lista').addEventListener('keydown', (e) => { const c = e.target.closest('.inf'); if (c && e.key === 'Enter') location.hash = 'informe/' + c.dataset.id; });
 $('#q').addEventListener('input', (e) => { S.q = e.target.value; pintarLista(); });
 $('#filtros').addEventListener('click', (e) => { const b = e.target.closest('.chip'); if (!b) return; S.filtro = b.dataset.f; $$('#filtros .chip').forEach((c) => c.classList.toggle('on', c === b)); pintarLista(); });
@@ -283,6 +285,7 @@ document.addEventListener('click', (e) => {
   else if (a === 'volver') location.hash = 'informes';
   else if (a === 'pdf' || a === 'docx') exportar(a);
   else if (a === 'drive') abrirDrive();
+  else if (a === 'eliminar') eliminarInforme(b.dataset.id || (S.inf && S.inf.id));
 });
 
 const ROLES_FIRMA = ['Elaboró', 'Revisó', 'Aprobó', 'Vo. Bo.'];
@@ -302,7 +305,7 @@ async function nuevoInforme() {
   try {
     const r = await apiOk('crear', { informe: { estado: 'BORRADOR', general: { tipo: 'CCTV con equipo robotizado', departamento: 'Quindío', equipo: C.EQUIPO_DEFECTO,
       fechaInspeccion: hoy(), fechaInforme: hoy() }, tramos: [nuevoTramo()], conclusiones: '', recomendaciones: '', alcance: '', firmas: firmasBase() } });
-    S.inf = null; location.hash = 'informe/' + r.informe.id;
+    S.inf = null; S.recienCreado = r.informe.id; location.hash = 'informe/' + r.informe.id;
     toast(`Informe <b>${esc(r.informe.id)}</b> creado en Drive.`, 'ok');
   } catch (e) { toast(esc(e.message), 'err'); }
   finally { p.fin(); }
@@ -327,6 +330,7 @@ async function abrirInforme(id, tab) {
     pintarEditor();
     precargarFotos();
   } else ver('editor');
+  avisoNuevo();
   $$('#side a[data-v]').forEach((a) => a.classList.toggle('on', a.dataset.v === 'informes'));
   setTab(tab || S.tab || 'general', true);
 }
@@ -339,6 +343,13 @@ function pintarEditor() {
   $('#e-estado').disabled = esLector();
   pintarGeneral(); pintarTramos(); pintarConclusiones();
   bloquearLector();
+  avisoNuevo();
+}
+function avisoNuevo() {
+  const n = !!(S.inf && S.recienCreado === S.inf.id), el = $('#e-nuevo');
+  el.classList.toggle('hide', !n);
+  $('#e-borrar').title = n ? 'Descartar este informe' : 'Eliminar informe';
+  if (n) el.innerHTML = `<span>${ico('doc')}<b>Informe nuevo.</b> Si lo creó por error o ya no lo necesita, descártelo ahora: se borra su carpeta de Drive sin dejar rastro. Al salir del informe solo podrá eliminarse.</span><button type="button" class="btn sm" data-accion="eliminar">${ico('x')}Descartar informe</button>`;
 }
 function bloquearLector() {
   if (!esLector()) return;
@@ -1090,6 +1101,53 @@ function pintarVista() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px 48px;margin-top:56px">${(I.firmas || []).filter((f) => f.nombre || f.cargo).map((f) => `<div><div style="font-size:10px;letter-spacing:.12em;color:#6b7684;text-transform:uppercase;margin-bottom:34px">${esc(f.rol)}</div><div style="border-top:1.5px solid #0a2a4a;padding-top:6px"><b>${esc(f.nombre || ' ')}</b><br><span style="color:#6b7684">${esc([f.cargo, f.matricula ? 'M.P. ' + f.matricula : ''].filter(Boolean).join(' · '))}</span></div></div>`).join('')}</div>
     </div>`;
   $('#p-vista').innerHTML = html;
+}
+
+
+/* ============================================================ descartar (primera apertura) y eliminar */
+async function descartarInforme(id) {
+  if (!(await confirmar('Descartar informe ' + id, 'Se deshace la creación: se borra la carpeta de Drive con lo que haya cargado. No se envía aviso a nadie.', 'Descartar', true))) return;
+  const p = progreso('Descartando el informe…'); p.set(0.5);
+  try {
+    clearTimeout(S.timer); S.dirty = false;
+    await apiOk('descartar', { id });
+    S.cola = S.cola.filter((q) => q.infId !== id);
+    try { localStorage.removeItem('hr_respaldo_' + id); } catch (e) { /* nada */ }
+    S.informes = S.informes.filter((i) => i.id !== id); S.inf = null; S.recienCreado = null;
+    toast(`Informe <b>${esc(id)}</b> descartado.`, 'ok');
+    location.hash = 'informes';
+  } catch (e) { toast(esc(e.message), 'err', 8000); }
+  finally { p.fin(); }
+}
+
+async function eliminarInforme(id) {
+  if (!id || esLector()) return;
+  if (S.recienCreado === id) return descartarInforme(id);
+  const x = S.informes.find((i) => i.id === id) || (S.inf && S.inf.id === id ? { id, titulo: S.inf.general.proyecto, tramos: S.inf.tramos.length, obs: S.inf.tramos.reduce((a, t) => a + t.obs.length, 0) } : { id, titulo: '' });
+  const d = abrirModal(`<div class="mh"><h3>Eliminar informe ${esc(id)}</h3></div>
+    <div class="mb"><p style="color:var(--mut);margin-bottom:12px"><b style="color:var(--tx)">${esc(x.titulo || 'Sin título')}</b>${x.tramos != null ? ' · ' + x.tramos + ' tramos · ' + (x.obs || 0) + ' observaciones' : ''}</p>
+      <p style="margin-bottom:14px">Se borra su carpeta de Drive completa: el informe, las fotos, los videos y los PDF y Word exportados. Los demás creadores reciben un aviso por correo.</p>
+      <label class="campo"><span>Motivo (va en el aviso por correo)</span><input id="el-mot" placeholder="Ej.: informe de prueba, duplicado, se rehízo…" maxlength="300"></label>
+      <label class="campo"><span>Para confirmar, escriba <b class="mono" style="color:var(--err)">${esc(id)}</b></span><input id="el-cod" autocomplete="off" class="mono"></label>
+      <div class="msg" id="el-msg"></div></div>
+    <div class="mf"><button class="btn" data-el="no">Cancelar</button><button class="btn pri" data-el="si" id="el-btn" disabled style="background:var(--err);border-color:var(--err);color:#fff">${ico('basura')}Eliminar definitivamente</button></div>`);
+  $('#el-cod').addEventListener('input', (e) => { $('#el-btn').disabled = e.target.value.trim().toUpperCase() !== id.toUpperCase(); });
+  setTimeout(() => $('#el-mot').focus(), 50);
+  d.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-el]'); if (!b) return;
+    if (b.dataset.el === 'no') return cerrarModal();
+    b.disabled = true; b.textContent = 'Eliminando…';
+    try {
+      const r = await apiOk('eliminar', { id, confirmacion: $('#el-cod').value, motivo: $('#el-mot').value }, { timeout: 90000 });
+      cerrarModal();
+      if (S.inf && S.inf.id === id) { S.inf = null; S.dirty = false; clearTimeout(S.timer); }
+      S.cola = S.cola.filter((q) => q.infId !== id);
+      try { localStorage.removeItem('hr_respaldo_' + id); } catch (er) { /* nada */ }
+      S.informes = S.informes.filter((i) => i.id !== id);
+      toast(`Informe <b>${esc(id)}</b> eliminado de Drive.${r.avisados && r.avisados.length ? ' Aviso enviado a ' + esc(r.avisados.join(', ')) + '.' : ''}`, 'ok', 8000);
+      if (location.hash.indexOf('informe/') >= 0) location.hash = 'informes'; else pintarLista();
+    } catch (err) { $('#el-msg').textContent = err.message; $('#el-msg').className = 'msg err'; b.disabled = false; b.innerHTML = ico('basura') + 'Eliminar definitivamente'; }
+  });
 }
 
 /* ============================================================ exportar y Drive */
