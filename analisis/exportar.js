@@ -69,15 +69,19 @@ async function entregar(I, blob, fmt, op, p) {
 function datosGenerales(g) {
   return [['Cliente', g.cliente], ['Contrato', g.contrato], ['Municipio', g.municipio], ['Departamento', g.departamento], ['Sector o dirección', g.sector], ['Tipo de inspección', g.tipo],
     ['Fecha de inspección', HR.fFecha(g.fechaInspeccion)], ['Fecha del informe', HR.fFecha(g.fechaInforme)], ['Equipo', g.equipo], ['Clima', g.clima],
-    ['Limpieza previa', g.limpieza], ['Método de limpieza', g.metodoLimpieza], ['Operador', g.operador], ['Ingeniero responsable', g.responsable]].filter(([, v]) => v);
+    ['Limpieza previa', g.limpieza], ['Método de limpieza', g.metodoLimpieza], ['Operador', g.operador], ['Auxiliar de campo', g.auxiliar]].filter(([, v]) => v);
 }
 function datosTramo(t) {
   return [['Sentido', t.sentido], ['Tipo de red', t.red], ['Material', t.material], ['Diámetro nominal', m(t.diametro, 'mm', 0)], ['Longitud del tramo', m(t.longitud, 'm')], ['Longitud inspeccionada', m(t.inspeccionada, 'm')],
     ['Profundidad pozo inicial', m(t.profIni, 'm')], ['Profundidad pozo final', m(t.profFin, 'm')], ['Ubicación', t.ubicacion], ['Coordenadas', t.coord], ['Fecha', HR.fFecha(t.fecha)],
     ['Condición general', t.condicion], ['Video', t.video ? t.video.nombre : ''], ['Fin anticipado', t.finAnticipado]].filter(([, v]) => v);
 }
+const firmasDe = (I) => {
+  const F = Array.isArray(I.firmas) ? I.firmas : [{ rol: 'Elaboró', nombre: I.general.responsable, cargo: 'Ingeniero responsable', matricula: I.general.matricula }, { rol: 'Revisó', nombre: I.general.reviso, cargo: '' }];
+  return F.filter((f) => f && (f.nombre || f.cargo)).map((f) => ({ rol: f.rol || '', nombre: f.nombre || '', det: [f.cargo, f.matricula ? 'M.P. ' + f.matricula : ''].filter(Boolean).join(' · ') }));
+};
 const pares4 = (a) => { const r = []; for (let i = 0; i < a.length; i += 2) r.push([a[i][0], a[i][1], a[i + 1] ? a[i + 1][0] : '', a[i + 1] ? a[i + 1][1] : '']); return r; };
-const leyendaFoto = (o, i, n) => `Foto ${n} · Obs. ${i + 1}${o.dist != null ? ' · ' + HR.nf(o.dist) + ' m' : ''}${o.tiempo != null ? ' · ' + HR.fmtT(o.tiempo) : ''}${o.codigo ? ' · ' + o.codigo + (HR.COD[o.codigo] ? ' ' + HR.COD[o.codigo].n.toLowerCase() : '') : ''}${o.grado ? ' · Grado ' + o.grado : ''}`;
+const leyendaFoto = (o, i, n) => `Foto ${n} · Obs. ${i + 1}${o.dist != null ? ' · ' + HR.nf(o.dist) + ' m' : ''}${o.codigo ? ' · ' + o.codigo + (HR.COD[o.codigo] ? ' ' + HR.COD[o.codigo].n.toLowerCase() : '') : ''}${o.grado ? ' · Grado ' + o.grado : ''}`;
 
 /* ====================================================================== PDF */
 async function pdf(I, op) {
@@ -139,10 +143,10 @@ async function pdf(I, op) {
       const pf = await perfilPNG(t), ph = CW * (pf.h / pf.w);
       espacio(ph + 4); doc.setDrawColor(...LINEA); doc.setLineWidth(0.2); doc.rect(M, y, CW, ph + 2); doc.addImage(pf.url, 'PNG', M + 1, y + 1, CW - 2, ph); y += ph + 6;
       if (t.obs.length) {
-        tabla({ head: [['#', 'Dist. (m)', 'Tiempo', 'Código', 'Descripción', 'Hora', 'Grado']],
-          body: t.obs.map((o, i) => [String(i + 1), HR.nf(o.dist) + (o.distFin != null ? ' – ' + HR.nf(o.distFin) : ''), HR.fmtT(o.tiempo), (o.codigo || '') + (HR.COD[o.codigo] ? '\n' + HR.COD[o.codigo].n : ''), o.desc || '', o.hIni ? o.hIni + (o.hFin ? ' a ' + o.hFin : '') : '', o.grado ? String(o.grado) : '—'].map(txtPDF)),
-          columnStyles: { 0: { cellWidth: 7, halign: 'center' }, 1: { cellWidth: 19 }, 2: { cellWidth: 14 }, 3: { cellWidth: 34 }, 5: { cellWidth: 15 }, 6: { cellWidth: 13, halign: 'center' } },
-          didParseCell: (d) => { if (d.section === 'body' && d.column.index === 6 && Number(d.cell.raw)) { d.cell.styles.fillColor = hexRGB(HR.GRADOS[Number(d.cell.raw)].c); d.cell.styles.textColor = [255, 255, 255]; d.cell.styles.fontStyle = 'bold'; } } });
+        tabla({ head: [['#', 'Dist. (m)', 'Código', 'Descripción', 'Hora', 'Grado']],
+          body: t.obs.map((o, i) => [String(i + 1), HR.nf(o.dist) + (o.distFin != null ? ' – ' + HR.nf(o.distFin) : ''), (o.codigo || '') + (HR.COD[o.codigo] ? '\n' + HR.COD[o.codigo].n : ''), o.desc || '', o.hIni ? o.hIni + (o.hFin ? ' a ' + o.hFin : '') : '', o.grado ? String(o.grado) : '—'].map(txtPDF)),
+          columnStyles: { 0: { cellWidth: 7, halign: 'center' }, 1: { cellWidth: 20 }, 2: { cellWidth: 38 }, 4: { cellWidth: 15 }, 5: { cellWidth: 13, halign: 'center' } },
+          didParseCell: (d) => { if (d.section === 'body' && d.column.index === 5 && Number(d.cell.raw)) { d.cell.styles.fillColor = hexRGB(HR.GRADOS[Number(d.cell.raw)].c); d.cell.styles.textColor = [255, 255, 255]; d.cell.styles.fontStyle = 'bold'; } } });
       } else parrafo('Sin observaciones registradas en el tramo.', 'italic');
       const conF = t.obs.map((o, i) => ({ o, i, src: fotoDe(o) })).filter((x) => x.src);
       if (conF.length) {
@@ -173,11 +177,18 @@ async function pdf(I, op) {
     titulo('4.  Conclusiones'); parrafo(I.conclusiones || '—');
     titulo('5.  Recomendaciones'); parrafo(I.recomendaciones || '—');
     if (I.anexos) { titulo('6.  Anexos'); parrafo(I.anexos); }
-    espacio(42); y += 18;
-    const firma = (x, rol, nombre, extra) => { doc.setDrawColor(...NAVY); doc.setLineWidth(0.35); doc.line(x, y, x + 72, y); fuente('bold', 9.4, TX); doc.text(txtPDF(nombre || ' '), x, y + 5); fuente('normal', 8.4, MUT); doc.text(txtPDF(rol + (extra ? ' · ' + extra : '')), x, y + 9.5); };
-    firma(M, 'Elaboró · Ingeniero responsable', g.responsable, g.matricula ? 'M.P. ' + g.matricula : '');
-    if (g.reviso) firma(M + CW / 2 + 6, 'Revisó', g.reviso);
-    y += 14;
+    const FIR = firmasDe(I);
+    for (let k = 0; k < FIR.length; k += 2) {
+      espacio(36); y += 6;
+      FIR.slice(k, k + 2).forEach((f, j) => {
+        const x = M + j * (CW / 2 + 6);
+        fuente('normal', 7.4, MUT); doc.setCharSpace(0.4); doc.text(txtPDF(f.rol.toUpperCase()), x, y); doc.setCharSpace(0);
+        doc.setDrawColor(...NAVY); doc.setLineWidth(0.35); doc.line(x, y + 16, x + 72, y + 16);
+        fuente('bold', 9.4, TX); doc.text(txtPDF(f.nombre || ' '), x, y + 21);
+        fuente('normal', 8.4, MUT); doc.splitTextToSize(txtPDF(f.det), 72).slice(0, 2).forEach((l, n) => doc.text(l, x, y + 25.5 + n * 3.8));
+      });
+      y += 32;
+    }
 
     /* encabezado y pie en todas las páginas */
     const n = doc.getNumberOfPages(), lh = 9, lw = lh * (logo.w / logo.h);
@@ -249,14 +260,14 @@ async function docx(I, op) {
       const pf = await perfilPNG(t);
       cuerpo.push(new Paragraph({ spacing: { after: 120 }, children: [img(pf.url, PX, PX * (pf.h / pf.w), 'png')] }));
       if (t.obs.length) {
-        const w = [420, 1100, 850, 2000, 3368, 900, 1000];
+        const w = [420, 1150, 2250, 3918, 900, 1000];
         cuerpo.push(new Table({ width: { size: CWd, type: WidthType.DXA }, columnWidths: w, layout: TableLayoutType.FIXED, borders: bordes,
-          rows: [new TableRow({ tableHeader: true, children: ['#', 'Dist. (m)', 'Tiempo', 'Código', 'Descripción', 'Hora', 'Grado'].map((h, i) => celda(h, { w: w[i], f: AZ, c: 'FFFFFF', b: true })) })]
+          rows: [new TableRow({ tableHeader: true, children: ['#', 'Dist. (m)', 'Código', 'Descripción', 'Hora', 'Grado'].map((h, i) => celda(h, { w: w[i], f: AZ, c: 'FFFFFF', b: true })) })]
             .concat(t.obs.map((o, i) => new TableRow({ cantSplit: true, children: [
-              celda(String(i + 1), { w: w[0], al: AlignmentType.CENTER }), celda(HR.nf(o.dist) + (o.distFin != null ? ' – ' + HR.nf(o.distFin) : ''), { w: w[1] }), celda(HR.fmtT(o.tiempo), { w: w[2] }),
-              celda((o.codigo || '') + (HR.COD[o.codigo] ? '\n' + HR.COD[o.codigo].n : ''), { w: w[3], b2: true, sub: true }), celda(o.desc || '', { w: w[4] }),
-              celda(o.hIni ? o.hIni + (o.hFin ? ' a ' + o.hFin : '') : '', { w: w[5] }),
-              o.grado ? celda(String(o.grado), { w: w[6], f: HR.GRADOS[o.grado].c.slice(1).toUpperCase(), c: 'FFFFFF', b: true, al: AlignmentType.CENTER }) : celda('—', { w: w[6], al: AlignmentType.CENTER })] }))) }));
+              celda(String(i + 1), { w: w[0], al: AlignmentType.CENTER }), celda(HR.nf(o.dist) + (o.distFin != null ? ' – ' + HR.nf(o.distFin) : ''), { w: w[1] }),
+              celda((o.codigo || '') + (HR.COD[o.codigo] ? '\n' + HR.COD[o.codigo].n : ''), { w: w[2], b2: true, sub: true }), celda(o.desc || '', { w: w[3] }),
+              celda(o.hIni ? o.hIni + (o.hFin ? ' a ' + o.hFin : '') : '', { w: w[4] }),
+              o.grado ? celda(String(o.grado), { w: w[5], f: HR.GRADOS[o.grado].c.slice(1).toUpperCase(), c: 'FFFFFF', b: true, al: AlignmentType.CENTER }) : celda('—', { w: w[5], al: AlignmentType.CENTER })] }))) }));
       } else cuerpo.push(P('Sin observaciones registradas en el tramo.', { i: true, c: GR }));
       const conF = t.obs.map((o, i) => ({ o, i, src: fotoDe(o) })).filter((x) => x.src);
       if (conF.length) {
@@ -282,11 +293,13 @@ async function docx(I, op) {
     cuerpo.push(H1('4.  Conclusiones'), ...parrafos(I.conclusiones));
     cuerpo.push(H1('5.  Recomendaciones'), ...parrafos(I.recomendaciones));
     if (I.anexos) cuerpo.push(H1('6.  Anexos'), ...parrafos(I.anexos));
-    const firma = (rol, nombre, extra) => new TableCell({ width: { size: CWd / 2, type: WidthType.DXA }, borders: sinBorde, margins: { top: 0, bottom: 0, left: 0, right: 400 }, children: [
-      new Paragraph({ spacing: { before: 900 }, border: { top: { style: BorderStyle.SINGLE, size: 6, color: AZ, space: 4 } }, children: [new TextRun({ text: nombre || ' ', bold: true, size: 19 })] }),
-      new Paragraph({ children: [new TextRun({ text: rol + (extra ? ' · ' + extra : ''), size: 16, color: GR })] })] });
-    cuerpo.push(new Table({ width: { size: CWd, type: WidthType.DXA }, columnWidths: [CWd / 2, CWd / 2], borders: sinBorde,
-      rows: [new TableRow({ cantSplit: true, children: [firma('Elaboró · Ingeniero responsable', g.responsable, g.matricula ? 'M.P. ' + g.matricula : ''), g.reviso ? firma('Revisó', g.reviso) : new TableCell({ width: { size: CWd / 2, type: WidthType.DXA }, borders: sinBorde, children: [new Paragraph('')] })] })] }));
+    const firma = (f) => new TableCell({ width: { size: CWd / 2, type: WidthType.DXA }, borders: sinBorde, margins: { top: 0, bottom: 0, left: 0, right: 400 }, children: f ? [
+      new Paragraph({ spacing: { before: 360, after: 620 }, children: [new TextRun({ text: f.rol.toUpperCase(), size: 14, color: GR, characterSpacing: 20 })] }),
+      new Paragraph({ border: { top: { style: BorderStyle.SINGLE, size: 6, color: AZ, space: 4 } }, children: [new TextRun({ text: f.nombre || ' ', bold: true, size: 19 })] }),
+      new Paragraph({ children: [new TextRun({ text: f.det, size: 16, color: GR })] })] : [new Paragraph('')] });
+    const FIR = firmasDe(I), filasF = [];
+    for (let k = 0; k < FIR.length; k += 2) filasF.push(new TableRow({ cantSplit: true, children: [firma(FIR[k]), firma(FIR[k + 1])] }));
+    if (filasF.length) cuerpo.push(new Table({ width: { size: CWd, type: WidthType.DXA }, columnWidths: [CWd / 2, CWd / 2], borders: sinBorde, rows: filasF }));
 
     const lh = 34, lw = lh * (logo.w / logo.h);
     const doc = new Document({

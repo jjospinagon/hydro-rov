@@ -38,7 +38,7 @@ const GEN = [
   { k: 'clima', l: 'Condición del clima', t: 'sel', o: ['', 'Seco', 'Lluvia reciente', 'Lluvia durante la inspección'] },
   { k: 'limpieza', l: 'Limpieza previa de la red', t: 'sel', o: ['', 'Sí', 'No', 'Parcial'] },
   { k: 'equipo', l: 'Equipo de inspección', w: 'w2' }, { k: 'metodoLimpieza', l: 'Método de limpieza', w: 'w2', ph: 'Ej.: hidrosucción, varillado' },
-  { k: 'operador', l: 'Operador del equipo' }, { k: 'responsable', l: 'Ingeniero responsable' }, { k: 'matricula', l: 'Matrícula profesional' }, { k: 'reviso', l: 'Revisó' },
+  { k: 'operador', l: 'Operador del equipo', w: 'w2' }, { k: 'auxiliar', l: 'Auxiliar de campo', w: 'w2' },
   { k: 'notasCampo', l: 'Observaciones de campo', t: 'area', w: 'w4', ph: 'Condiciones del sitio, tránsito, accesos, novedades durante la jornada…' }];
 const TR = [
   { k: 'pozoIni', l: 'Pozo inicial', ph: 'PZ-01' }, { k: 'pozoFin', l: 'Pozo final', ph: 'PZ-02' },
@@ -282,6 +282,13 @@ document.addEventListener('click', (e) => {
   else if (a === 'drive') abrirDrive();
 });
 
+const ROLES_FIRMA = ['Elaboró', 'Revisó', 'Aprobó', 'Vo. Bo.'];
+function firmasBase() { return [{ rol: 'Elaboró', nombre: '', cargo: 'Ingeniero civil', matricula: '' }, { rol: 'Revisó', nombre: '', cargo: '', matricula: '' }]; }
+function migrarFirmas(I) {
+  if (Array.isArray(I.firmas)) return;
+  const g = I.general || {};
+  I.firmas = [{ rol: 'Elaboró', nombre: g.responsable || '', cargo: 'Ingeniero responsable', matricula: g.matricula || '' }, { rol: 'Revisó', nombre: g.reviso || '', cargo: '', matricula: '' }];
+}
 function nuevoTramo(n) {
   return { id: uid('t'), pozoIni: '', pozoFin: '', sentido: 'Aguas abajo', red: 'Sanitaria', material: '', diametro: null, longitud: null, inspeccionada: null,
     profIni: null, profFin: null, fecha: hoy(), condicion: '', ubicacion: '', coord: '', finAnticipado: '', conclusion: '', recomendacion: '', video: null, obs: [] };
@@ -291,7 +298,7 @@ async function nuevoInforme() {
   const p = progreso('Creando el informe y su carpeta en Drive…'); p.set(0.4);
   try {
     const r = await apiOk('crear', { informe: { estado: 'BORRADOR', general: { tipo: 'CCTV con equipo robotizado', departamento: 'Quindío', equipo: C.EQUIPO_DEFECTO,
-      fechaInspeccion: hoy(), fechaInforme: hoy(), responsable: esCreador() ? S.user.nombre : '' }, tramos: [nuevoTramo()], conclusiones: '', recomendaciones: '', alcance: '' } });
+      fechaInspeccion: hoy(), fechaInforme: hoy() }, tramos: [nuevoTramo()], conclusiones: '', recomendaciones: '', alcance: '', firmas: firmasBase() } });
     S.inf = null; location.hash = 'informe/' + r.informe.id;
     toast(`Informe <b>${esc(r.informe.id)}</b> creado en Drive.`, 'ok');
   } catch (e) { toast(esc(e.message), 'err'); }
@@ -312,6 +319,7 @@ async function abrirInforme(id, tab) {
     catch (e) { toast(esc(e.message), 'err'); location.hash = 'informes'; return; }
     if (!S.inf.tramos.length) S.inf.tramos.push(nuevoTramo());
     S.inf.tramos.forEach((t) => { t.obs = t.obs || []; });
+    migrarFirmas(S.inf);
     S.tramoSel = S.inf.tramos[0].id; S.dirty = false; setSync('ok', 'Guardado');
     pintarEditor();
     precargarFotos();
@@ -367,8 +375,26 @@ function pintarConclusiones() {
     <div class="card"><h3><span class="n">02</span>Recomendaciones</h3><div class="frm">
       <label class="campo w4"><span>Recomendaciones</span><textarea data-b="i:recomendaciones" rows="8">${esc(S.inf.recomendaciones || '')}</textarea></label></div></div>
     <div class="card"><h3><span class="n">03</span>Anexos y notas finales</h3><div class="frm">
-      <label class="campo w4"><span>Anexos (relación de videos, planos, registros entregados)</span><textarea data-b="i:anexos" rows="4">${esc(S.inf.anexos || '')}</textarea></label></div></div>`;
+      <label class="campo w4"><span>Anexos (relación de videos, planos, registros entregados)</span><textarea data-b="i:anexos" rows="4">${esc(S.inf.anexos || '')}</textarea></label></div></div>
+    <div class="card" id="firmas"><h3><span class="n">04</span>Firmas del informe <span class="der solo-ed"><button type="button" class="btn sm" data-fa="mia" title="Poner mis datos en la primera firma">${ico('user')}<span class="tx">Usar mis datos</span></button><button type="button" class="btn sm" data-fa="nueva">${ico('mas')}Agregar firma</button></span></h3>
+      <p class="ayuda">Quien firma puede ser usted u otra persona. Lo que escriba aquí es lo que sale al pie del PDF y del Word.</p>
+      ${S.inf.firmas.map((f, i) => `<div class="frm" data-firma="${i}" style="border-top:1px dashed var(--line);padding-top:12px">
+        <label class="campo"><span>Firma ${i + 1} · rol</span><input data-b="f:rol" list="roles-firma" value="${esc(f.rol)}"></label>
+        <label class="campo"><span>Nombre de quien firma</span><input data-b="f:nombre" value="${esc(f.nombre)}" placeholder="Nombre completo"></label>
+        <label class="campo"><span>Cargo o profesión</span><input data-b="f:cargo" value="${esc(f.cargo)}" placeholder="Ej.: Ingeniero civil"></label>
+        <label class="campo"><span>Matrícula profesional</span><div style="display:flex;gap:6px"><input data-b="f:matricula" value="${esc(f.matricula)}" placeholder="Opcional">${S.inf.firmas.length > 1 ? `<button type="button" class="btn sm peligro solo-ed" data-fa="quitar" title="Quitar esta firma">${ico('basura')}</button>` : ''}</div></label></div>`).join('')}
+      <datalist id="roles-firma">${ROLES_FIRMA.map((r) => `<option value="${r}">`).join('')}</datalist></div>`;
+  bloquearLector();
 }
+$('#p-conclusiones').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-fa]'); if (!b || esLector()) return;
+  const F = S.inf.firmas, a = b.dataset.fa;
+  if (a === 'nueva') { if (F.length >= 4) return toast('Máximo cuatro firmas.'); F.push({ rol: ROLES_FIRMA[Math.min(F.length, 3)], nombre: '', cargo: '', matricula: '' }); }
+  else if (a === 'quitar') F.splice(Number(b.closest('[data-firma]').dataset.firma), 1);
+  else if (a === 'mia') F[0].nombre = S.user.nombre || '';
+  pintarConclusiones(); marcarSucio();
+  if (a === 'nueva') { const u = $$('#firmas [data-b="f:nombre"]').pop(); if (u) u.focus(); }
+});
 
 /* ------------------------------------------------------------ tramos */
 function colorTramo(t) { const m = Math.max(0, ...t.obs.map((o) => Number(o.grado) || 0)); return GRADOS[m].c; }
@@ -629,7 +655,7 @@ function pintarObs() {
         <span class="nro">#${i + 1}${o.tiempo != null ? ' · ' + fmtT(o.tiempo) : ''}</span>${o.foto && !o.foto.id ? '<span class="pend">Subiendo a Drive…</span>' : ''}</div>
       <div class="cps">
         <label><span>Distancia (m)</span><input data-b="o:dist" data-n="1" inputmode="decimal" value="${o.dist == null ? '' : String(o.dist).replace('.', ',')}" placeholder="0,00"></label>
-        <label><span>Tiempo video</span><input data-b="o:tiempo" data-tiempo="1" value="${esc(fmtT(o.tiempo))}" placeholder="mm:ss"></label>
+        <label title="Solo sirve para volver a ese punto del video; no sale en el informe"><span>Minuto (solo app)</span><input data-b="o:tiempo" data-tiempo="1" value="${esc(fmtT(o.tiempo))}" placeholder="mm:ss"></label>
         <label class="w2"><span>Código del hallazgo</span><select data-b="o:codigo">${opcionesCodigo(o.codigo)}</select></label>
         <label class="w4"><span>Descripción</span><textarea data-b="o:desc" placeholder="Qué se observa, extensión, condición…">${esc(o.desc || '')}</textarea></label>
         <label class="c12"><span>Posición horaria</span><div class="hr"><select data-b="o:hIni">${horas(o.hIni)}</select><span style="color:var(--mut2)">a</span><select data-b="o:hFin">${horas(o.hFin)}</select></div></label>
@@ -708,6 +734,7 @@ function onInput(e) {
   const [sc, k] = b.split(':');
   let obj = sc === 'g' ? S.inf.general : sc === 't' ? tramoActual() : sc === 'i' ? S.inf : null;
   if (sc === 'o') obj = obsPorId(el.closest('[data-obs]').dataset.obs);
+  if (sc === 'f') obj = S.inf.firmas[Number(el.closest('[data-firma]').dataset.firma)];
   if (!obj) return;
   let v = el.type === 'checkbox' ? el.checked : el.value;
   if (el.dataset.n) v = pn(v);
@@ -903,7 +930,7 @@ function pintarVista() {
       <h1>${esc(g.proyecto || 'Sin título')}</h1>
       <div style="color:#5b6573">${esc([g.cliente, g.municipio, g.departamento].filter(Boolean).join(' · '))}</div>
       <h2>1. Información general</h2>
-      ${filaKV([['Cliente', g.cliente], ['Contrato', g.contrato], ['Municipio', g.municipio], ['Departamento', g.departamento], ['Sector', g.sector], ['Tipo de inspección', g.tipo], ['Fecha de inspección', fFecha(g.fechaInspeccion)], ['Fecha del informe', fFecha(g.fechaInforme)], ['Equipo', g.equipo], ['Clima', g.clima], ['Limpieza previa', g.limpieza], ['Método de limpieza', g.metodoLimpieza], ['Operador', g.operador], ['Ingeniero responsable', g.responsable]])}
+      ${filaKV([['Cliente', g.cliente], ['Contrato', g.contrato], ['Municipio', g.municipio], ['Departamento', g.departamento], ['Sector', g.sector], ['Tipo de inspección', g.tipo], ['Fecha de inspección', fFecha(g.fechaInspeccion)], ['Fecha del informe', fFecha(g.fechaInforme)], ['Equipo', g.equipo], ['Clima', g.clima], ['Limpieza previa', g.limpieza], ['Método de limpieza', g.metodoLimpieza], ['Operador', g.operador], ['Auxiliar de campo', g.auxiliar]])}
       ${g.notasCampo ? `<p style="white-space:pre-wrap">${esc(g.notasCampo)}</p>` : ''}
       <h2>2. Alcance y metodología</h2>${I.alcance ? `<p style="white-space:pre-wrap">${esc(I.alcance)}</p>` : '<p style="color:#9aa3ae">Sin texto de alcance.</p>'}
       <h3>Grados de severidad empleados</h3><table><tr><th>Grado</th><th>Severidad</th></tr>${GRADOS.slice(1).map((x) => `<tr><td><span class="gtag" style="background:${x.c}">${x.g}</span></td><td>${x.n}</td></tr>`).join('')}</table>
@@ -911,12 +938,13 @@ function pintarVista() {
       ${I.tramos.map((t, ti) => `<h3>3.${ti + 1} Tramo ${esc(etiquetaTramo(t))}</h3>
         ${filaKV([['Sentido', t.sentido], ['Tipo de red', t.red], ['Material', t.material], ['Diámetro', t.diametro ? nf(t.diametro, 0) + ' mm' : ''], ['Longitud del tramo', t.longitud != null ? nf(t.longitud) + ' m' : ''], ['Longitud inspeccionada', t.inspeccionada != null ? nf(t.inspeccionada) + ' m' : ''], ['Prof. pozo inicial', t.profIni != null ? nf(t.profIni) + ' m' : ''], ['Prof. pozo final', t.profFin != null ? nf(t.profFin) + ' m' : ''], ['Ubicación', t.ubicacion], ['Coordenadas', t.coord], ['Fecha', fFecha(t.fecha)], ['Condición general', t.condicion], ['Video', t.video ? t.video.nombre : ''], ['Fin anticipado', t.finAnticipado]])}
         <div style="border:1px solid #e3e8ee;border-radius:4px;padding:6px;margin:8px 0">${perfilSVG(t, { claro: true })}</div>
-        ${t.obs.length ? `<table><tr><th>#</th><th>Dist. (m)</th><th>Tiempo</th><th>Código</th><th>Descripción</th><th>Hora</th><th>Grado</th></tr>${t.obs.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(nf(o.dist))}${o.distFin != null ? ' – ' + esc(nf(o.distFin)) : ''}</td><td>${esc(fmtT(o.tiempo))}</td><td><b>${esc(o.codigo)}</b>${COD[o.codigo] ? '<br><span style="color:#6b7684">' + esc(COD[o.codigo].n) + '</span>' : ''}</td><td>${esc(o.desc)}</td><td>${o.hIni ? esc(o.hIni + (o.hFin ? ' a ' + o.hFin : '')) : ''}</td><td>${o.grado ? `<span class="gtag" style="background:${GRADOS[o.grado].c}">${o.grado}</span>` : '—'}</td></tr>`).join('')}</table>` : '<p style="color:#9aa3ae">Sin observaciones registradas.</p>'}
+        ${t.obs.length ? `<table><tr><th>#</th><th>Dist. (m)</th><th>Código</th><th>Descripción</th><th>Hora</th><th>Grado</th></tr>${t.obs.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(nf(o.dist))}${o.distFin != null ? ' – ' + esc(nf(o.distFin)) : ''}</td><td><b>${esc(o.codigo)}</b>${COD[o.codigo] ? '<br><span style="color:#6b7684">' + esc(COD[o.codigo].n) + '</span>' : ''}</td><td>${esc(o.desc)}</td><td>${o.hIni ? esc(o.hIni + (o.hFin ? ' a ' + o.hFin : '')) : ''}</td><td>${o.grado ? `<span class="gtag" style="background:${GRADOS[o.grado].c}">${o.grado}</span>` : '—'}</td></tr>`).join('')}</table>` : '<p style="color:#9aa3ae">Sin observaciones registradas.</p>'}
         ${t.obs.some(fotoSrc) ? `<div class="fotos">${t.obs.map((o, i) => (fotoSrc(o) ? `<figure><img src="${fotoSrc(o)}" alt=""><figcaption><b>Foto ${++fN}</b> · Obs. ${i + 1}${o.dist != null ? ' · ' + esc(nf(o.dist)) + ' m' : ''}${o.codigo ? ' · ' + esc(o.codigo) : ''}${o.grado ? ' · Grado ' + o.grado : ''}${o.desc ? '<br>' + esc(o.desc) : ''}</figcaption></figure>` : '')).join('')}</div>` : ''}
         ${t.conclusion ? `<p><b>Conclusión del tramo.</b> ${esc(t.conclusion)}</p>` : ''}${t.recomendacion ? `<p><b>Recomendación.</b> ${esc(t.recomendacion)}</p>` : ''}`).join('')}
       <h2>4. Conclusiones</h2><p style="white-space:pre-wrap">${esc(I.conclusiones || '—')}</p>
       <h2>5. Recomendaciones</h2><p style="white-space:pre-wrap">${esc(I.recomendaciones || '—')}</p>
       ${I.anexos ? `<h2>6. Anexos</h2><p style="white-space:pre-wrap">${esc(I.anexos)}</p>` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px 48px;margin-top:56px">${(I.firmas || []).filter((f) => f.nombre || f.cargo).map((f) => `<div><div style="font-size:10px;letter-spacing:.12em;color:#6b7684;text-transform:uppercase;margin-bottom:34px">${esc(f.rol)}</div><div style="border-top:1.5px solid #0a2a4a;padding-top:6px"><b>${esc(f.nombre || ' ')}</b><br><span style="color:#6b7684">${esc([f.cargo, f.matricula ? 'M.P. ' + f.matricula : ''].filter(Boolean).join(' · '))}</span></div></div>`).join('')}</div>
     </div>`;
   $('#p-vista').innerHTML = html;
 }
