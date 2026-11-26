@@ -23,7 +23,7 @@ var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
   CREADORES: [
     { email: 'jjospinagon@gmail.com', nombre: 'Juan José Ospina González' },
-    { email: 'ing.jjgomezm@gmail.com', nombre: 'Creador HYDRO-ROV' }
+    { email: 'ing.jjgomezm@gmail.com', nombre: 'Juan José Gómez Moscoso' }
   ],
   CLAVE_INICIAL: '0000',
   ITERACIONES: 1000,            // HMAC-SHA256 iterado

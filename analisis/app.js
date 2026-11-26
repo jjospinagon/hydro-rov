@@ -175,11 +175,14 @@ function entrar() {
   clearInterval(hudTimer); hudTimer = null;
   $('#boot').classList.add('hide'); $('#login').classList.add('hide'); $('#app').classList.remove('hide');
   document.body.classList.toggle('es-creador', esCreador()); document.body.classList.toggle('es-lector', esLector());
+  pintarUsuario();
+  $('#ver').textContent = 'v' + (C.VERSION || '');
+  route();
+}
+function pintarUsuario() {
   const n = S.user.nombre || S.user.email;
   $('#yo-av').textContent = n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
   $('#yo-n').textContent = n.split(/\s+/).slice(0, 2).join(' '); $('#yo-r').textContent = S.user.rol;
-  $('#ver').textContent = 'v' + (C.VERSION || '');
-  route();
 }
 function menu(on) { document.body.classList.toggle('menu', on == null ? !document.body.classList.contains('menu') : on); }
 $('#burger').addEventListener('click', () => menu());
@@ -1619,14 +1622,32 @@ async function verUsuarios() {
       <label class="campo w2"><span>Correo</span><input id="u-email" type="email" required placeholder="persona@correo.com"></label>
       <label class="campo"><span>Nombre</span><input id="u-nombre" required></label>
       <label class="campo"><span>Rol</span><select id="u-rol"><option value="EDITOR">Editor · crea y edita informes</option><option value="LECTOR">Lector · solo consulta</option><option value="CREADOR">Creador · acceso total</option></select></label>
-      <div class="campo w4"><button class="btn pri" type="submit">${ico('mas')}Crear usuario</button><span class="ayuda" style="margin-left:10px">Se genera una clave temporal que el usuario cambia en su primer ingreso.</span></div></form></div>
-    <div class="tw"><table class="tabla"><thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="u-tb"><tr><td colspan="5"><div class="spin"></div></td></tr></tbody></table></div>`;
+      <div class="campo w4 fila-acc"><button class="btn pri" type="submit">${ico('mas')}Crear usuario</button><p class="nota-acc">Se genera una clave temporal que el usuario cambia en su primer ingreso.</p></div></form></div>
+    <div class="tw"><table class="tabla resp"><thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody id="u-tb"><tr><td colspan="5"><div class="spin"></div></td></tr></tbody></table></div>`;
   $('#u-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     try { const r = await apiOk('usuarioGuardar', { email: $('#u-email').value, nombre: $('#u-nombre').value, rol: $('#u-rol').value }); if (r.claveTemporal) mostrarTemporal(r.usuario.email, r.claveTemporal); $('#u-form').reset(); cargarUsuarios(); }
     catch (err) { toast(esc(err.message), 'err'); }
   });
   cargarUsuarios();
+}
+function editarNombre(email, actual, tr) {
+  const d = abrirModal(`<div class="mh"><h3>Editar nombre</h3></div><form class="mb" id="en-f"><p style="color:var(--mut);margin-bottom:12px">${esc(email)}</p>
+    <label class="campo"><span>Nombre completo</span><input id="en-n" maxlength="80" required value="${esc(actual)}" autocomplete="off"></label></form>
+    <div class="mf"><button class="btn" data-m="x">Cancelar</button><button class="btn pri" data-m="ok">Guardar</button></div>`);
+  const inp = d.querySelector('#en-n'); setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  const guardar = async () => {
+    const nombre = inp.value.trim(); if (!nombre) { inp.focus(); return; }
+    const rolSel = tr.querySelector('select[data-uc="rol"]');
+    try {
+      await apiOk('usuarioGuardar', { email, nombre, rol: rolSel ? rolSel.value : 'CREADOR', activo: !/Inactivo/.test(tr.textContent) });
+      cerrarModal(); toast('Nombre actualizado.', 'ok');
+      if (S.user && S.user.email === email) { S.user.nombre = nombre; pintarUsuario(); }
+      cargarUsuarios();
+    } catch (err) { toast(esc(err.message), 'err'); }
+  };
+  d.querySelector('#en-f').addEventListener('submit', (e) => { e.preventDefault(); guardar(); });
+  d.addEventListener('click', (e) => { const m = e.target.closest('[data-m]'); if (!m) return; if (m.dataset.m === 'ok') guardar(); else cerrarModal(); });
 }
 function mostrarTemporal(email, clave) {
   const d = abrirModal(`<div class="mh"><h3>Clave temporal</h3></div><div class="mb"><p style="color:var(--mut)">Entréguesela a <b>${esc(email)}</b> por un canal privado. Solo se muestra esta vez; en su primer ingreso deberá crear su propia contraseña.</p>
@@ -1637,18 +1658,18 @@ function mostrarTemporal(email, clave) {
 async function cargarUsuarios() {
   try {
     const r = await apiOk('usuarios');
-    $('#u-tb').innerHTML = r.usuarios.map((u) => `<tr data-u="${esc(u.email)}"><td><b>${esc(u.nombre)}</b><br><span style="color:var(--mut2);font-size:12.5px">${esc(u.email)}</span></td>
-      <td>${u.creadorFijo ? '<span class="rol CREADOR">CREADOR</span>' : `<select class="inp" data-uc="rol" style="height:34px;width:auto">${['CREADOR', 'EDITOR', 'LECTOR'].map((x) => `<option${x === u.rol ? ' selected' : ''}>${x}</option>`).join('')}</select>`}</td>
-      <td>${u.bloqueado ? '<span class="est" style="color:var(--err)">Bloqueado</span>' : !u.activo ? '<span class="est">Inactivo</span>' : u.debeCambiar ? '<span class="est REVISION">Pendiente 1er ingreso</span>' : '<span class="est EMITIDO">Activo</span>'}</td>
-      <td style="color:var(--mut)">${u.ultimoIngreso ? esc(hace(u.ultimoIngreso)) : '—'}</td>
-      <td style="text-align:right;white-space:nowrap">${u.bloqueado ? '<button class="btn xs" data-uc="desbloquear">Desbloquear</button> ' : ''}<button class="btn xs" data-uc="reiniciar">Reiniciar clave</button>
-        ${u.creadorFijo ? '' : `<button class="btn xs ${u.activo ? 'peligro' : ''}" data-uc="activo">${u.activo ? 'Desactivar' : 'Activar'}</button>`}</td></tr>`).join('');
+    $('#u-tb').innerHTML = r.usuarios.map((u) => `<tr data-u="${esc(u.email)}"><td><div class="u-quien"><b>${esc(u.nombre)}</b><span>${esc(u.email)}</span></div></td>
+      <td class="r-rol">${u.creadorFijo ? '<span class="rol CREADOR">CREADOR</span>' : `<select class="inp" data-uc="rol" style="height:34px;width:auto">${['CREADOR', 'EDITOR', 'LECTOR'].map((x) => `<option${x === u.rol ? ' selected' : ''}>${x}</option>`).join('')}</select>`}</td>
+      <td class="r-est">${u.bloqueado ? '<span class="est" style="color:var(--err)">Bloqueado</span>' : !u.activo ? '<span class="est">Inactivo</span>' : u.debeCambiar ? '<span class="est REVISION">Pendiente 1er ingreso</span>' : '<span class="est EMITIDO">Activo</span>'}</td>
+      <td class="r-ult" data-l="Último ingreso:" style="color:var(--mut)">${u.ultimoIngreso ? esc(hace(u.ultimoIngreso)) : '—'}</td>
+      <td class="r-acc"><div class="u-acc">${u.bloqueado ? '<button class="btn xs" data-uc="desbloquear">Desbloquear</button>' : ''}<button class="btn xs" data-uc="nombre" data-nombre="${esc(u.nombre)}">Editar nombre</button><button class="btn xs" data-uc="reiniciar">Reiniciar clave</button>${u.creadorFijo ? '' : `<button class="btn xs ${u.activo ? 'peligro' : ''}" data-uc="activo">${u.activo ? 'Desactivar' : 'Activar'}</button>`}</div></td></tr>`).join('');
   } catch (e) { $('#u-tb').innerHTML = `<tr><td colspan="5">${esc(e.message)}</td></tr>`; }
 }
 $('#v-usuarios').addEventListener('click', async (e) => {
   const b = e.target.closest('button[data-uc]'); if (!b) return;
   const tr = b.closest('[data-u]'), email = tr.dataset.u, a = b.dataset.uc;
   try {
+    if (a === 'nombre') { editarNombre(email, b.dataset.nombre, tr); return; }
     if (a === 'reiniciar') { if (!(await confirmar('Reiniciar contraseña', `Se genera una clave temporal para <b>${esc(email)}</b> y se cierran sus sesiones abiertas.`, 'Reiniciar'))) return; const r = await apiOk('usuarioReiniciar', { email }); mostrarTemporal(email, r.claveTemporal); }
     else {
       const rolSel = tr.querySelector('select[data-uc="rol"]'), rol = rolSel ? rolSel.value : 'CREADOR';
@@ -1666,10 +1687,10 @@ $('#v-usuarios').addEventListener('change', async (e) => {
 });
 async function verAuditoria() {
   const V = $('#v-auditoria');
-  V.innerHTML = `<div class="cab"><div><h1 class="t">Registro de actividad</h1><p>Ingresos, cambios de clave, informes creados, videos y exportaciones (últimos 200 eventos).</p></div></div><div class="tw"><table class="tabla"><thead><tr><th>Fecha</th><th>Usuario</th><th>Evento</th><th>Detalle</th></tr></thead><tbody id="a-tb"><tr><td colspan="4"><div class="spin"></div></td></tr></tbody></table></div>`;
+  V.innerHTML = `<div class="cab"><div><h1 class="t">Registro de actividad</h1><p>Ingresos, cambios de clave, informes creados, videos y exportaciones (últimos 200 eventos).</p></div></div><div class="tw"><table class="tabla resp aud"><thead><tr><th>Fecha</th><th>Usuario</th><th>Evento</th><th>Detalle</th></tr></thead><tbody id="a-tb"><tr><td colspan="4"><div class="spin"></div></td></tr></tbody></table></div>`;
   try {
     const r = await apiOk('auditoria');
-    $('#a-tb').innerHTML = r.eventos.map((x) => `<tr><td class="mono" style="font-size:12px;white-space:nowrap">${esc(x.fecha)}</td><td>${esc(x.usuario)}</td><td>${esc(x.accion.replace(/_/g, ' '))}</td><td style="color:var(--mut)">${esc(x.detalle)}</td></tr>`).join('') || '<tr><td colspan="4">Sin eventos.</td></tr>';
+    $('#a-tb').innerHTML = r.eventos.map((x) => `<tr><td class="mono a-f" style="font-size:12px;white-space:nowrap">${esc(x.fecha)}</td><td class="a-u">${esc(x.usuario)}</td><td class="a-e"><b>${esc(x.accion.replace(/_/g, ' '))}</b></td><td class="a-d" style="color:var(--mut)">${esc(x.detalle)}</td></tr>`).join('') || '<tr><td colspan="4">Sin eventos.</td></tr>';
   } catch (e) { $('#a-tb').innerHTML = `<tr><td colspan="4">${esc(e.message)}</td></tr>`; }
 }
 function verCuenta() {
