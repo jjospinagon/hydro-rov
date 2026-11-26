@@ -7,6 +7,6 @@ window.HR_CONFIG = {
   EMPRESA: 'HYDRO-ROV',
   LEMA: 'Inspección de redes con sonda y equipo robotizado',
   WEB: 'hydro-rov.com',
-  CORREO: 'hydrorov.co@gmail.com',
+  CORREO: 'contacto@hydro-rov.com',
   EQUIPO_DEFECTO: 'Robot de inspección CCTV VEVOR WR030 · cable de 60 m'
 };
