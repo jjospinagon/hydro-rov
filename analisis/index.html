@@ -15,11 +15,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Barlow+Condensed:wght@700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="app.css?v=20261125p">
-<script src="config.js?v=20261125p"></script>
-<script src="comun.js?v=20261125p" defer></script>
-<script src="app.js?v=20261125p" defer></script>
-<script src="exportar.js?v=20261125p" defer></script>
+<link rel="stylesheet" href="app.css?v=20261125q">
+<script src="config.js?v=20261125q"></script>
+<script src="comun.js?v=20261125q" defer></script>
+<script src="app.js?v=20261125q" defer></script>
+<script src="exportar.js?v=20261125q" defer></script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -141,6 +141,7 @@
       <div class="tools">
         <label class="buscar"><svg class="i"><use href="#i-buscar"/></svg><input id="q" type="search" placeholder="Buscar por proyecto, cliente, municipio o código" aria-label="Buscar informe"></label>
         <div class="chips seg" id="vista-l"><button class="chip on" data-vista-l="lista">Lista</button><button class="chip" data-vista-l="mapa">Mapa</button></div>
+        <div class="fila-cli"><label class="sel-cli"><svg class="i"><use href="#i-user"/></svg><select id="f-cliente" aria-label="Filtrar por cliente"><option value="*">Todos los clientes</option></select></label><button type="button" class="chip" id="agrupar" aria-pressed="false" title="Agrupar los informes por cliente">Agrupar por cliente</button></div>
         <div class="chips" id="filtros"><button class="chip on" data-f="">Todos</button><button class="chip" data-f="BORRADOR">Borrador</button><button class="chip" data-f="REVISION">En revisión</button><button class="chip" data-f="EMITIDO">Emitidos</button></div>
       </div>
       <div class="grid" id="lista"></div>

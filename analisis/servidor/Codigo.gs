@@ -17,7 +17,7 @@
  * Instalación: ver LEEME-DESPLIEGUE.md. Ejecutar una vez la función instalar() desde el editor para autorizar.
  */
 
-var VERSION = '1.7.0 (2026-11-25)';
+var VERSION = '1.8.0 (2026-11-25)';
 
 var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
@@ -389,6 +389,8 @@ function resumen_(inf, e) {
   e.municipio = txt_(g.municipio, 80);
   e.fecha = txt_(g.fechaInspeccion, 10);
   e.estado = txt_(inf.estado, 20) || 'BORRADOR';
+  /* informe de muestra (el que se publica en la web): se lista, pero no suma en los indicadores ni en el mapa */
+  if (inf.muestra) e.muestra = true; else delete e.muestra;
   e.tramos = tramos.length; e.obs = nobs; e.gradoMax = max;
   e.portada = portada;
   /* metros lineales: la longitud inspeccionada que registró el inspector (si no la puso, la del tramo) */

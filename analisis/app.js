@@ -235,28 +235,60 @@ async function cargarLista() {
   try { const r = await apiOk('listar'); S.informes = r.informes; if (r.usuario) S.user = Object.assign(S.user, r.usuario); pintarLista(); }
   catch (e) { L.innerHTML = `<div class="vacio"><h3>No se pudo cargar la lista</h3><p>${esc(e.message)}</p></div>`; }
 }
+/* clientes: se agrupan sin distinguir mayúsculas, tildes ni espacios sobrantes */
+const claveCli = (c) => String(c || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+/* entre variantes del mismo nombre, la más cuidada (mayúsculas y tildes) */
+const cuidado = (t) => (t.match(/[A-ZÁÉÍÓÚÑ]/g) || []).length + 2 * (t.match(/[áéíóúñÁÉÍÓÚÑ]/g) || []).length;
+function clientes() {
+  const m = new Map();
+  S.informes.forEach((x) => { const k = claveCli(x.cliente); const o = m.get(k) || { k, n: 0, nombres: {} }; o.n++; const nom = String(x.cliente || '').trim() || 'Sin cliente'; o.nombres[nom] = (o.nombres[nom] || 0) + 1; m.set(k, o); });
+  return [...m.values()].map((o) => ({ k: o.k, n: o.n, nombre: Object.entries(o.nombres).sort((a, b) => b[1] - a[1] || cuidado(b[0]) - cuidado(a[0]))[0][0] }))
+    .sort((a, b) => (a.k === '' ? 1 : b.k === '' ? -1 : a.nombre.localeCompare(b.nombre, 'es')));
+}
+function pintarClientes() {
+  const sel = $('#f-cliente'); if (!sel) return;
+  const C = clientes();
+  if (S.cliente != null && S.cliente !== '*' && !C.some((c) => c.k === S.cliente)) S.cliente = '*';
+  sel.innerHTML = `<option value="*">Todos los clientes</option>` + C.map((c) => `<option value="${esc(c.k)}"${S.cliente === c.k ? ' selected' : ''}>${esc(c.nombre)} (${c.n})</option>`).join('');
+  sel.value = S.cliente == null ? '*' : S.cliente;
+}
+const deCliente = (x) => S.cliente == null || S.cliente === '*' || claveCli(x.cliente) === S.cliente;
 function pintarLista() {
-  const I = S.informes, q = S.q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  pintarClientes();
+  const q = S.q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  /* los indicadores no cuentan el informe de muestra de la web y siguen el cliente elegido */
+  const I = S.informes.filter((x) => !x.muestra && deCliente(x));
   const tramos = I.reduce((a, x) => a + (x.tramos || 0), 0), ml = I.reduce((a, x) => a + (Number(x.ml) || 0), 0), sitios = I.filter((x) => x.lat != null).length;
   $('#kpis').innerHTML = `<div class="kpi kpi-ml"><div class="l">ML inspeccionados</div><div class="v">${nf(ml, ml >= 1000 ? 0 : 1)}<small> m</small></div><div class="s">metros lineales de tubería recorridos</div></div>`
     + [['Informes', I.length], ['Emitidos', I.filter((x) => x.estado === 'EMITIDO').length], ['En borrador', I.filter((x) => x.estado === 'BORRADOR').length], ['Tramos', tramos]]
       .map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('')
     + `<button type="button" class="kpi kpi-mapa" data-vista-l="mapa"><div class="l">Mapa de inspecciones</div><div class="v">${sitios}<small> sitio${sitios === 1 ? '' : 's'}</small></div><div class="s">${ico('gps')}Ver en el mapa</div></button>`;
   if (S.vistaLista === 'mapa') pintarMapaGlobal();
-  const F = I.filter((x) => (!S.filtro || x.estado === S.filtro) && (!q || [x.id, x.titulo, x.cliente, x.municipio].join(' ').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(q)));
-  if (!I.length) {
+  const F = S.informes.filter((x) => deCliente(x) && (!S.filtro || x.estado === S.filtro) && (!q || [x.id, x.titulo, x.cliente, x.municipio].join(' ').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(q)));
+  if (!S.informes.length) {
     $('#lista').innerHTML = `<div class="vacio" style="grid-column:1/-1"><h3>Aún no hay informes</h3><p>Cree el primero: cargue el video del tramo, capture los hallazgos y exporte el informe.</p>${esLector() ? '' : '<p style="margin-top:14px"><button class="btn pri" data-accion="nuevo">' + ico('mas') + 'Nuevo informe</button></p>'}</div>`;
     return;
   }
   if (!F.length) { $('#lista').innerHTML = '<div class="vacio" style="grid-column:1/-1"><h3>Sin resultados</h3><p>Ningún informe coincide con la búsqueda.</p></div>'; return; }
-  $('#lista').innerHTML = F.map((x) => `<article class="inf" data-id="${esc(x.id)}" tabindex="0">
+  const tarjeta = (x) => `<article class="inf${x.muestra ? ' es-muestra' : ''}" data-id="${esc(x.id)}" tabindex="0">
     <div class="ph">${x.portada ? `<img data-fid="${esc(x.portada)}" alt="">` : '<div class="rg"><span style="width:60px;height:60px"></span><span style="width:110px;height:110px"></span><span style="width:170px;height:170px"></span></div>'}
-      <span class="cod">${esc(x.id)}</span><span class="est est ${esc(x.estado)}">${esc(ESTADOS[x.estado] || x.estado)}</span></div>
+      <span class="cod">${esc(x.id)}</span><span class="est est ${esc(x.estado)}">${esc(ESTADOS[x.estado] || x.estado)}</span>${x.muestra ? '<span class="muestra-tag" title="Informe de muestra publicado en la web. No suma en los indicadores ni en el mapa.">Muestra · no se contabiliza</span>' : ''}</div>
     <div class="bd"><h3>${esc(x.titulo)}</h3><div class="me">${esc([x.cliente, x.municipio].filter(Boolean).join(' · ') || 'Sin cliente')}${x.fecha ? ' · ' + esc(fFecha(x.fecha)) : ''}</div>
       <div class="me">${x.tramos || 0} tramo${x.tramos === 1 ? '' : 's'} · <b style="color:var(--tx)">${nf(x.ml || 0, 1)} m</b> inspeccionados · ${x.obs || 0} hallazgo${x.obs === 1 ? '' : 's'}${x.lat != null ? ' · ' + ico('gps', 'i mini') : ''}</div>
       <div class="ft"><span class="gbar" title="Grado máximo registrado">${[1, 2, 3, 4, 5].map((g) => `<i style="${g <= (x.gradoMax || 0) ? 'background:' + GRADOS[x.gradoMax].c : ''}"></i>`).join('')}</span>
         <span>${esc(hace(x.actualizado))}${x.actualizadoPor ? ' · ' + esc(x.actualizadoPor.split('@')[0]) : ''}</span>
-        <button type="button" class="btn xs fant peligro solo-editor" data-accion="eliminar" data-id="${esc(x.id)}" title="Eliminar informe">${ico('basura')}</button></div></div></article>`).join('');
+        <button type="button" class="btn xs fant peligro solo-editor" data-accion="eliminar" data-id="${esc(x.id)}" title="Eliminar informe">${ico('basura')}</button></div></div></article>`;
+  if (S.agrupar) {
+    /* agrupado por cliente: encabezado con cantidad y metros de cada cliente (sin contar la muestra) */
+    const grupos = new Map();
+    F.forEach((x) => { const k = claveCli(x.cliente); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(x); });
+    const nombres = new Map(clientes().map((c) => [c.k, c.nombre]));
+    const orden = [...grupos.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : (nombres.get(a) || a).localeCompare(nombres.get(b) || b, 'es')));
+    $('#lista').innerHTML = orden.map((k) => {
+      const L = grupos.get(k), cuenta = L.filter((x) => !x.muestra), mlg = cuenta.reduce((a, x) => a + (Number(x.ml) || 0), 0);
+      return `<div class="grupo-cli"><h3>${ico('user')}${esc(nombres.get(k) || 'Sin cliente')}</h3><span>${cuenta.length ? `${cuenta.length} informe${cuenta.length === 1 ? '' : 's'} · ${nf(mlg, 1)} m inspeccionados` : 'Informe de muestra · no se contabiliza'}</span></div>` + L.map(tarjeta).join('');
+    }).join('');
+  } else $('#lista').innerHTML = F.map(tarjeta).join('');
   portadas(F.filter((x) => x.portada));
 }
 async function portadas(lst) {
@@ -268,6 +300,10 @@ async function portadas(lst) {
 $('#lista').addEventListener('click', (e) => { if (e.target.closest('[data-accion]')) return; const c = e.target.closest('.inf'); if (c) location.hash = 'informe/' + c.dataset.id; });
 $('#lista').addEventListener('keydown', (e) => { const c = e.target.closest('.inf'); if (c && e.key === 'Enter') location.hash = 'informe/' + c.dataset.id; });
 $('#q').addEventListener('input', (e) => { S.q = e.target.value; pintarLista(); });
+$('#f-cliente').addEventListener('change', (e) => { S.cliente = e.target.value; pintarLista(); if (S.vistaLista === 'mapa') pintarMapaGlobal(); });
+$('#agrupar').addEventListener('click', () => { S.agrupar = !S.agrupar; $('#agrupar').classList.toggle('on', S.agrupar); $('#agrupar').setAttribute('aria-pressed', S.agrupar ? 'true' : 'false'); try { localStorage.setItem('hr_agrupar', S.agrupar ? '1' : ''); } catch (err) { /* sin almacenamiento */ } pintarLista(); });
+try { S.agrupar = localStorage.getItem('hr_agrupar') === '1'; } catch (err) { S.agrupar = false; }
+if (S.agrupar) { $('#agrupar').classList.add('on'); $('#agrupar').setAttribute('aria-pressed', 'true'); }
 $('#filtros').addEventListener('click', (e) => { const b = e.target.closest('.chip'); if (!b) return; S.filtro = b.dataset.f; $$('#filtros .chip').forEach((c) => c.classList.toggle('on', c === b)); pintarLista(); });
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-accion]'); if (!b) return;
@@ -1473,7 +1509,7 @@ async function pintarMapaGlobal() {
     capaOSM(mapaG); mapaG._capa = L.layerGroup().addTo(mapaG);
   }
   mapaG._capa.clearLayers();
-  const q = norm(S.q), I = S.informes.filter((x) => x.lat != null && (!S.filtro || x.estado === S.filtro) && (!q || norm([x.id, x.titulo, x.cliente, x.municipio].join(' ')).includes(q)));
+  const q = norm(S.q), I = S.informes.filter((x) => x.lat != null && !x.muestra && deCliente(x) && (!S.filtro || x.estado === S.filtro) && (!q || norm([x.id, x.titulo, x.cliente, x.municipio].join(' ')).includes(q)));
   const lim = [];
   I.forEach((x) => {
     (x.lin || []).forEach((l) => { L.polyline([[l[0], l[1]], [l[2], l[3]]], { color: '#36B5D6', weight: 5, opacity: 0.95 }).bindTooltip(esc(x.id + ' · ' + (l[4] || 'tramo'))).addTo(mapaG._capa); lim.push([l[0], l[1]], [l[2], l[3]]); });

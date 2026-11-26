@@ -59,7 +59,7 @@ window.crearDemoHR = async function (avisar) {
       o(30, 'FIN', 0, '', '', 'Llegada al pozo PZ-04. Fin del tramo.', null)
     ] };
   const informe = {
-    estado: 'REVISION', general, tramos: [T1, T2, T3],
+    estado: 'REVISION', muestra: true, general, tramos: [T1, T2, T3],
     alcance: 'Inspección por circuito cerrado de televisión (CCTV) de tres tramos consecutivos del colector sanitario de la Calle 12, entre los pozos PZ-01 y PZ-04, con robot autopropulsado y registro continuo de video. Cada hallazgo se registra con su distancia desde el pozo de inicio (leída del contador del equipo), su posición horaria mirando aguas abajo (12 = clave, 6 = solera), un código del catálogo de defectos y un grado de severidad de 1 (muy leve) a 5 (crítico) según el criterio del inspector. DOCUMENTO DE DEMOSTRACIÓN: los datos y las fotografías son ilustrativos.',
     conclusiones: 'De los tres tramos inspeccionados, el PZ-02 → PZ-03 presenta la condición más desfavorable (mala), con infiltración activa, raíces en junta y fractura longitudinal, y quedó con inspección incompleta por obstrucción. El tramo PZ-01 → PZ-02 está en condición regular por sedimentos y una conexión defectuosa. El tramo PZ-03 → PZ-04 está en buena condición, con hallazgos leves de operación.',
     recomendaciones: '1. Priorizar el tramo PZ-02 → PZ-03: corte de raíces, retiro de escombros y nueva inspección completa desde PZ-03.\n2. Programar limpieza hidrodinámica en PZ-01 → PZ-02 y corregir la conexión domiciliaria de los 31,80 m.\n3. Incluir los tramos en el plan de mantenimiento preventivo con inspección de seguimiento en 12 meses.',
