@@ -17,7 +17,7 @@
  * Instalación: ver LEEME-DESPLIEGUE.md. Ejecutar una vez la función instalar() desde el editor para autorizar.
  */
 
-var VERSION = '1.8.0 (2026-11-25)';
+var VERSION = '1.9.0 (2026-11-25)';
 
 var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
@@ -72,6 +72,7 @@ function despachar_(q) {
   if (a === 'verificar') return verificar_(q);          // público: página de autenticidad (código del QR)
   if (a === 'verificarFotos') return verificarFotos_(q);
   if (a === 'verificarHuella') return verificarHuella_(q);   // público: identificar un PDF/Word por su huella
+  if (a === 'pushNovedades') return pushNovedades_(q);       // público con clave propia: lo llama el service worker al recibir un push
 
   var ses = sesion_(q.token);
   if (!ses) throw Falla_('Su sesión terminó. Ingrese de nuevo.', 'NO_AUTH');
@@ -102,6 +103,24 @@ function despachar_(q) {
     case 'usuarioGuardar': puede_(ses, 'admin'); return usuarioGuardar_(ses, q);
     case 'usuarioReiniciar': puede_(ses, 'admin'); return usuarioReiniciar_(ses, q);
     case 'auditoria': puede_(ses, 'admin'); return { ok: true, eventos: leerAuditoria_() };
+    case 'cotListar': return cotListar_();
+    case 'cotObtener': return cotObtener_(q);
+    case 'cotCrear': puede_(ses, 'editar'); return cotCrear_(ses, q);
+    case 'cotGuardar': puede_(ses, 'editar'); return cotGuardar_(ses, q);
+    case 'cotEliminar': puede_(ses, 'editar'); return cotEliminar_(ses, q);
+    case 'cotImagen': puede_(ses, 'editar'); return cotImagen_(ses, q);
+    case 'cotImagenLeer': return cotImagenLeer_(q);
+    case 'cotExport': puede_(ses, 'editar'); return cotExport_(ses, q);
+    case 'cotConsecutivoAlterno': puede_(ses, 'editar'); return cotConsecutivoAlterno_(ses, q);
+    case 'agenda': return { ok: true, eventos: leerAgenda_().eventos };
+    case 'avisos': return avisosDe_(ses.email);
+    case 'avisosLeidos': return avisosLeidos_(ses.email, q);
+    case 'pushClave': return { ok: true, clave: vapid_().pub };
+    case 'pushSuscribir': return pushSuscribir_(ses, q);
+    case 'pushQuitar': return pushQuitar_(ses, q);
+    case 'pushProbar': return pushProbar_(ses);
+    case 'agendaGuardar': puede_(ses, 'editar'); return agendaGuardar_(ses, q);
+    case 'agendaEliminar': puede_(ses, 'editar'); return agendaEliminar_(ses, q);
   }
   throw Falla_('Acción desconocida.');
 }
@@ -928,6 +947,481 @@ function leerAuditoria_() {
   return t.split('\n').filter(String).slice(-200).reverse().map(function (l) {
     var p = l.split('\t'); return { fecha: p[0], usuario: p[1], accion: p[2], detalle: p[3] || '' };
   });
+}
+
+/* ============================================================ cotizaciones (1.9.0)
+   Cada cotización tiene su carpeta en «Cotizaciones/AAAA/COT-AAAA-NNN · cliente» dentro de la carpeta raíz:
+   cotizacion.json, la imagen de localización y los Word/PDF exportados. El índice resumido va en _sistema/_cotizaciones.json.
+   Consecutivo propio por año (propiedad CONSEC_COT_AAAA), independiente del de los informes. */
+var COT_ESTADOS = ['BORRADOR', 'ENVIADA', 'APROBADA', 'NO_APROBADA'];
+function leerCotIx_() { return JSON.parse(archivoSistema_('_cotizaciones.json', '{"cotizaciones":[]}').getBlob().getDataAsString('UTF-8') || '{"cotizaciones":[]}'); }
+function guardarCotIx_(ix) { archivoSistema_('_cotizaciones.json', '{"cotizaciones":[]}').setContent(JSON.stringify(ix)); }
+function cotEntrada_(ix, id) {
+  for (var i = 0; i < ix.cotizaciones.length; i++) if (ix.cotizaciones[i].id === id) return ix.cotizaciones[i];
+  return null;
+}
+function cotEntradaOFalla_(id) {
+  id = String(id || '');
+  if (!/^COT-\d{4}-\d{3,4}$/.test(id)) throw Falla_('Cotización no válida.');
+  var e = cotEntrada_(leerCotIx_(), id);
+  if (!e) throw Falla_('Esa cotización ya no existe.', 'NO_EXISTE');
+  return e;
+}
+function nombreCarpetaCot_(id, cliente) { return (id + ' · ' + (cliente || 'Sin cliente')).replace(/[\\/:*?"<>|]/g, '-').slice(0, 120); }
+function cotLimpia_(c) {
+  var o = JSON.parse(JSON.stringify(c || {}));
+  ['id', 'rev', 'creado', 'creadoPor', 'actualizado', 'actualizadoPor'].forEach(function (k) { delete o[k]; });
+  if (COT_ESTADOS.indexOf(o.estado) < 0) o.estado = 'BORRADOR';
+  if (!o.cliente || typeof o.cliente !== 'object') o.cliente = {};
+  if (!Array.isArray(o.items)) o.items = [];
+  if (!Array.isArray(o.tramos)) o.tramos = [];
+  return o;
+}
+function cotResumen_(c, e) {
+  var tot = 0, ml = 0;
+  (c.tramos || []).forEach(function (t) { var l = Number(t.longitud); if (t.longitud != null && isFinite(l)) ml += l; });
+  ml = Math.round(ml * 100) / 100;
+  var mlA = c.redondear ? Math.round(ml) : ml;   // mismo cálculo que la app: ítem «auto» = suma de tramos; «usaPrecio» = precio por metro
+  (c.items || []).forEach(function (it) {
+    var q = it.auto ? mlA : it.cant, v = it.usaPrecio ? c.precioMl : it.vu;
+    if (!it.porDefinir && q != null && v != null && isFinite(Number(q)) && isFinite(Number(v))) tot += Math.round(Number(q) * Number(v));
+  });
+  e.cliente = txt_((c.cliente || {}).entidad, 160); e.objeto = txt_(c.objeto, 240); e.fecha = txt_(c.fecha, 10);
+  e.estado = c.estado; e.total = Math.round(tot); e.ml = mlA; e.tramos = (c.tramos || []).length;
+  e.validez = Number(c.validez) || 0; e.municipio = txt_((c.cliente || {}).ciudad, 80); e.firmante = txt_((c.firma || {}).nombre, 120);
+  e.rev = c.rev; e.actualizado = c.actualizado; e.actualizadoPor = c.actualizadoPor; e.creadoPor = c.creadoPor;
+  return e;
+}
+function carpetaCot_(anio) { return hija_(hija_(raiz_(), 'Cotizaciones'), String(anio)); }
+function cotListar_() {
+  var L = leerCotIx_().cotizaciones.map(function (e) { var o = JSON.parse(JSON.stringify(e)); delete o.archivo; delete o.carpeta; return o; });
+  L.sort(function (a, b) { return a.id < b.id ? 1 : -1; });
+  return { ok: true, cotizaciones: L };
+}
+function cotLeer_(e) { return JSON.parse(DriveApp.getFileById(e.archivo).getBlob().getDataAsString('UTF-8')); }
+function cotObtener_(q) {
+  var e = cotEntradaOFalla_(q.id);
+  return { ok: true, cotizacion: cotLeer_(e), carpeta: 'https://drive.google.com/drive/folders/' + e.carpeta };
+}
+function cotCrear_(ses, q) {
+  var base = q.cotizacion && typeof q.cotizacion === 'object' ? q.cotizacion : {};
+  if (JSON.stringify(base).length > CFG.MAX_JSON) throw Falla_('La cotización supera el tamaño permitido.');
+  return conCandado_(function () {
+    var ix = leerCotIx_(), y = Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy'), k = 'CONSEC_COT_' + y;
+    var n = Number(props_().getProperty(k) || 0) + 1;
+    props_().setProperty(k, String(n));
+    var id = 'COT-' + y + '-' + ('00' + n).slice(-3);
+    var c = cotLimpia_(base);
+    delete c.imagen; delete c.alt;   // la imagen se sube después con cotImagen (pertenece a la carpeta de esta cotización)
+    c.id = id; c.rev = 1; c.creado = ahora_(); c.creadoPor = ses.email; c.actualizado = c.creado; c.actualizadoPor = ses.email;
+    var f = carpetaCot_(y).createFolder(nombreCarpetaCot_(id, (c.cliente || {}).entidad));
+    var a = f.createFile('cotizacion.json', JSON.stringify(c), MimeType.PLAIN_TEXT);
+    ix.cotizaciones.push(cotResumen_(c, { id: id, carpeta: f.getId(), archivo: a.getId() }));
+    guardarCotIx_(ix);
+    auditar_(ses.email, 'cotizacion_creada', id);
+    return { ok: true, cotizacion: c };
+  });
+}
+function cotGuardar_(ses, q) {
+  var c = q.cotizacion;
+  if (!c || typeof c !== 'object') throw Falla_('No llegó la cotización.');
+  if (JSON.stringify(c).length > CFG.MAX_JSON) throw Falla_('La cotización supera el tamaño permitido.');
+  var r = conCandado_(function () {
+    var ix = leerCotIx_(), e = cotEntrada_(ix, String(c.id || ''));
+    if (!e) throw Falla_('Esa cotización ya no existe.', 'NO_EXISTE');
+    var actual = cotLeer_(e);
+    if (Number(c.rev) !== Number(actual.rev) && !q.forzar) {
+      return { ok: false, codigo: 'CONFLICTO', error: 'Otra persona (' + actual.actualizadoPor + ') guardó cambios a las ' +
+        Utilities.formatDate(new Date(actual.actualizado), 'America/Bogota', 'HH:mm') + '.', rev: actual.rev };
+    }
+    var nuevo = cotLimpia_(c);
+    nuevo.id = actual.id; nuevo.creado = actual.creado; nuevo.creadoPor = actual.creadoPor;
+    nuevo.rev = Number(actual.rev) + 1; nuevo.actualizado = ahora_(); nuevo.actualizadoPor = ses.email;
+    if (e.alt) nuevo.alt = e.alt; else delete nuevo.alt;
+    DriveApp.getFileById(e.archivo).setContent(JSON.stringify(nuevo));
+    var cliAnt = e.cliente;
+    cotResumen_(nuevo, e);
+    if (cliAnt !== e.cliente) { try { DriveApp.getFolderById(e.carpeta).setName(nombreCarpetaCot_(e.id, e.cliente)); } catch (err) { /* nombre */ } }
+    if (actual.estado !== nuevo.estado) auditar_(ses.email, 'cotizacion_' + nuevo.estado.toLowerCase(), e.id);
+    guardarCotIx_(ix);
+    return { ok: true, rev: nuevo.rev, actualizado: nuevo.actualizado, actualizadoPor: ses.email, _cambio: actual.estado !== nuevo.estado ? nuevo.estado : '', _e: e };
+  });
+  if (r._cambio === 'APROBADA') {
+    var quien = nombreCorto_(ses.email);
+    avisar_(ses.email, { sec: 'cotizaciones', url: '#cotizacion/' + r._e.id, ref: r._e.id, ti: 'Cotización aprobada: ' + (r._e.cliente || r._e.id), cu: r._e.id + ' · $' + String(r._e.total).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' — por ' + quien });
+  }
+  delete r._cambio; delete r._e;
+  return r;
+}
+function cotEliminar_(ses, q) {
+  var id = String(q.id || '');
+  if (String(q.confirmacion || '').trim().toUpperCase() !== id.toUpperCase()) throw Falla_('Escriba el código de la cotización para confirmar.');
+  return conCandado_(function () {
+    var ix = leerCotIx_(), e = cotEntrada_(ix, id);
+    if (!e) throw Falla_('Esa cotización ya no existe.', 'NO_EXISTE');
+    if (ses.user.rol !== 'CREADOR' && e.creadoPor !== ses.email) throw Falla_('Solo los creadores, o quien creó la cotización, pueden eliminarla.', 'PERMISO');
+    try { DriveApp.getFolderById(e.carpeta).setTrashed(true); } catch (err) { /* ya no estaba */ }
+    ix.cotizaciones = ix.cotizaciones.filter(function (x) { return x.id !== id; });
+    guardarCotIx_(ix);
+    auditar_(ses.email, 'cotizacion_eliminada', id);
+    return { ok: true };
+  });
+}
+/* Formato sin membrete: consecutivo propio PTE-AAAA-NNN (propuesta técnico-económica), uno por cotización y estable. */
+function cotConsecutivoAlterno_(ses, q) {
+  var e0 = cotEntradaOFalla_(q.id);
+  return conCandado_(function () {
+    var ix = leerCotIx_(), e = cotEntrada_(ix, e0.id);
+    if (e.alt) return { ok: true, numero: e.alt, nuevo: false };
+    var y = Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy'), k = 'CONSEC_PTE_' + y;
+    var n = Number(props_().getProperty(k) || 0) + 1;
+    props_().setProperty(k, String(n));
+    e.alt = 'PTE-' + y + '-' + ('00' + n).slice(-3);
+    var c = cotLeer_(e); c.alt = e.alt; DriveApp.getFileById(e.archivo).setContent(JSON.stringify(c));
+    guardarCotIx_(ix);
+    auditar_(ses.email, 'cotizacion_consecutivo_alterno', e.id + ' ' + e.alt);
+    return { ok: true, numero: e.alt, nuevo: true };
+  });
+}
+function archivoEnCarpeta_(fileId, carpetaId) {
+  var f;
+  try { f = DriveApp.getFileById(String(fileId || '')); } catch (err) { return null; }
+  var p = f.getParents();
+  while (p.hasNext()) if (p.next().getId() === carpetaId) return f;
+  return null;
+}
+function cotImagen_(ses, q) {
+  var e = cotEntradaOFalla_(q.id), b = bytesDe_(q.b64);
+  if (b.length < 200) throw Falla_('La imagen llegó vacía.');
+  if (b.length > CFG.MAX_FOTO) throw Falla_('La imagen pesa más de 10 MB.');
+  var mime = empiezaCon_(b, [0xFF, 0xD8, 0xFF]) ? 'image/jpeg' : empiezaCon_(b, [0x89, 0x50, 0x4E, 0x47]) ? 'image/png' : '';
+  if (!mime) throw Falla_('Solo se aceptan imágenes JPG o PNG.');
+  var carpeta = DriveApp.getFolderById(e.carpeta);
+  if (q.anterior) { var v = archivoEnCarpeta_(q.anterior, e.carpeta); if (v) v.setTrashed(true); }
+  var f = carpeta.createFile(Utilities.newBlob(b, mime, 'localizacion' + (mime === 'image/png' ? '.png' : '.jpg')));
+  return { ok: true, fileId: f.getId() };
+}
+function cotImagenLeer_(q) {
+  var e = cotEntradaOFalla_(q.id), f = archivoEnCarpeta_(q.fileId, e.carpeta);
+  if (!f) return { ok: false, error: 'La imagen ya no está en la carpeta de la cotización.' };
+  var bl = f.getBlob();
+  return { ok: true, url: 'data:' + bl.getContentType() + ';base64,' + Utilities.base64Encode(bl.getBytes()) };
+}
+function cotExport_(ses, q) {
+  var e = cotEntradaOFalla_(q.id), fmt = String(q.formato || ''), b = bytesDe_(q.b64);
+  if (b.length > CFG.MAX_EXPORT) throw Falla_('El archivo supera 36 MB.');
+  var mime;
+  if (fmt === 'pdf' && empiezaCon_(b, [0x25, 0x50, 0x44, 0x46])) mime = 'application/pdf';
+  else if (fmt === 'docx' && empiezaCon_(b, [0x50, 0x4B])) mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  else throw Falla_('Formato de exportación no válido.');
+  var nombre = (txt_(q.nombre, 200).replace(/\.(pdf|docx)$/i, '').replace(/[\\/:*?"<>|]/g, '-').slice(0, 140) || e.id) + '.' + fmt;
+  var carpeta = DriveApp.getFolderById(e.carpeta), prev = carpeta.getFilesByName(nombre);
+  while (prev.hasNext()) prev.next().setTrashed(true);
+  var f = carpeta.createFile(Utilities.newBlob(b, mime, nombre));
+  auditar_(ses.email, 'cotizacion_exportada_' + fmt, e.id);
+  return { ok: true, url: f.getUrl(), nombre: nombre };
+}
+
+/* ============================================================ agenda: visitas previas y trabajos (1.9.0)
+   Un solo archivo _sistema/_agenda.json. Cada evento puede ir ligado a una cotización (cotId). */
+var EV_TIPOS = ['VISITA', 'TRABAJO', 'OTRO'], EV_ESTADOS = ['PROGRAMADO', 'CONFIRMADO', 'REALIZADO', 'CANCELADO'];
+function leerAgenda_() { return JSON.parse(archivoSistema_('_agenda.json', '{"eventos":[]}').getBlob().getDataAsString('UTF-8') || '{"eventos":[]}'); }
+function guardarAgenda_(A) { archivoSistema_('_agenda.json', '{"eventos":[]}').setContent(JSON.stringify(A)); }
+function fechaOk_(s) { s = String(s || ''); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; }
+function horaOk_(s) { s = String(s || ''); return /^\d{2}:\d{2}$/.test(s) ? s : ''; }
+function agendaGuardar_(ses, q) {
+  var v = q.evento;
+  if (!v || typeof v !== 'object') throw Falla_('No llegó el evento.');
+  var ini = fechaOk_(v.inicio);
+  if (!ini) throw Falla_('Indique la fecha del evento.');
+  var fin = fechaOk_(v.fin) || ini;
+  if (fin < ini) throw Falla_('La fecha final es anterior a la inicial.');
+  var ev = {
+    tipo: EV_TIPOS.indexOf(v.tipo) >= 0 ? v.tipo : 'OTRO', estado: EV_ESTADOS.indexOf(v.estado) >= 0 ? v.estado : 'PROGRAMADO',
+    titulo: txt_(v.titulo, 160), cliente: txt_(v.cliente, 160), cotId: /^COT-\d{4}-\d{3,4}$/.test(String(v.cotId || '')) ? v.cotId : '',
+    lugar: txt_(v.lugar, 240), inicio: ini, fin: fin, hora: horaOk_(v.hora), horaFin: horaOk_(v.horaFin),
+    responsables: txt_(v.responsables, 240), contacto: txt_(v.contacto, 120), telefono: txt_(v.telefono, 40), notas: txt_(v.notas, 3000),
+    lista: (Array.isArray(v.lista) ? v.lista : []).slice(0, 30).map(function (x) { return { t: txt_(x && x.t, 200), ok: !!(x && x.ok) }; }).filter(function (x) { return x.t; })
+  };
+  if (!ev.titulo) throw Falla_('Escriba un título para el evento.');
+  var antes = null;
+  var r = conCandado_(function () {
+    var A = leerAgenda_(), id = String(v.id || ''), prev = null;
+    for (var i = 0; i < A.eventos.length; i++) if (A.eventos[i].id === id) prev = A.eventos[i];
+    if (prev) {
+      if (prev.ver && v.ver !== prev.ver && !q.forzar) return { ok: false, codigo: 'CONFLICTO', error: 'Otra persona (' + prev.actPor + ') modificó este evento. Recargue la agenda.' };
+      antes = JSON.parse(JSON.stringify(prev));
+      Object.keys(ev).forEach(function (k) { prev[k] = ev[k]; });
+      ev = prev;
+    } else {
+      ev.id = 'EV-' + aleatorio_(5).toUpperCase(); ev.creado = ahora_(); ev.creadoPor = ses.email;
+      A.eventos.push(ev);
+    }
+    ev.act = ahora_(); ev.actPor = ses.email; ev.ver = aleatorio_(4);   // ver: cambia en cada guardado (control de edición simultánea)
+    var cal = calSync_(ev);                                            // copia en el calendario de Google (no detiene el guardado si falla)
+    if (A.eventos.length > 3000) A.eventos = A.eventos.slice(-3000);
+    guardarAgenda_(A);
+    auditar_(ses.email, antes ? 'agenda_editada' : 'agenda_creada', ev.id + ' ' + ev.inicio + ' ' + ev.titulo);
+    return { ok: true, evento: ev, calendario: cal };
+  });
+  if (r.ok) {
+    var aviso = avisoAgenda_(ev, antes, ses);
+    r.avisados = aviso ? avisar_(ses.email, aviso) : 0;
+  }
+  return r;
+}
+var TIPO_TXT = { VISITA: 'Visita previa', TRABAJO: 'Trabajo', OTRO: 'Evento' };
+function nombreCorto_(email) { var w = String((usuarios_()[email] || {}).nombre || email).trim().split(/\s+/); return w.length >= 4 ? w[0] + ' ' + w[2] : w.slice(0, 2).join(' '); }
+function fechaCorta_(d) { var m = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'], p = String(d).split('-'); return Number(p[2]) + ' ' + m[Number(p[1]) - 1]; }
+function cuandoTxt_(ev) { return (ev.inicio === ev.fin ? fechaCorta_(ev.inicio) : fechaCorta_(ev.inicio) + ' al ' + fechaCorta_(ev.fin)) + (ev.hora ? ' · ' + ev.hora : ''); }
+/* qué cambió en el evento (para el aviso al resto del equipo); null si no hay nada que avisar */
+function avisoAgenda_(ev, antes, ses) {
+  var nombre = nombreCorto_(ses.email);
+  var base = { sec: 'agenda', url: '#agenda', ref: ev.id };
+  if (!antes) return Object.assign(base, { ti: TIPO_TXT[ev.tipo] + ' agendada: ' + (ev.cliente || ev.titulo), cu: cuandoTxt_(ev) + (ev.lugar ? ' · ' + ev.lugar : '') + ' — por ' + nombre });
+  if (antes.estado !== ev.estado && ev.estado === 'CANCELADO') return Object.assign(base, { ti: TIPO_TXT[ev.tipo] + ' cancelada: ' + (ev.cliente || ev.titulo), cu: cuandoTxt_(antes) + ' — por ' + nombre });
+  if (antes.inicio !== ev.inicio || antes.fin !== ev.fin || antes.hora !== ev.hora) return Object.assign(base, { ti: TIPO_TXT[ev.tipo] + ' reprogramada: ' + (ev.cliente || ev.titulo), cu: 'Antes ' + cuandoTxt_(antes) + ' → ahora ' + cuandoTxt_(ev) + ' — por ' + nombre });
+  if (antes.estado !== ev.estado && ev.estado === 'CONFIRMADO') return Object.assign(base, { ti: TIPO_TXT[ev.tipo] + ' confirmada: ' + (ev.cliente || ev.titulo), cu: cuandoTxt_(ev) + ' — por ' + nombre });
+  return null;
+}
+function agendaEliminar_(ses, q) {
+  var id = String(q.id || '');
+  return conCandado_(function () {
+    var A = leerAgenda_(), n = A.eventos.length;
+    var ev = null;
+    A.eventos = A.eventos.filter(function (x) { if (x.id === id) ev = x; return x.id !== id; });
+    if (A.eventos.length === n) throw Falla_('Ese evento ya no existe.', 'NO_EXISTE');
+    if (ev && ev.gcal) { ev.estado = 'CANCELADO'; calSync_(ev); }
+    guardarAgenda_(A);
+    auditar_(ses.email, 'agenda_eliminada', id);
+    return { ok: true };
+  });
+}
+
+/* ============================================================ calendario de Google (1.9.0)
+   Cada evento de la agenda se copia en el calendario «HYDRO-ROV · Agenda» de la cuenta propietaria, con
+   hydrorov.co@gmail.com como invitado: así aparece en el calendario de esa cuenta. Sin correos de invitación. */
+var CAL_NOMBRE = 'HYDRO-ROV · Agenda', CAL_INVITADOS = ['hydrorov.co@gmail.com'];
+function calendario_() {
+  var id = props_().getProperty('CAL_ID');
+  if (id) { var c = CalendarApp.getCalendarById(id); if (c) return c; }
+  var L = CalendarApp.getCalendarsByName(CAL_NOMBRE);
+  var cal = L.length ? L[0] : CalendarApp.createCalendar(CAL_NOMBRE, { timeZone: 'America/Bogota', summary: 'Visitas técnicas previas y trabajos programados desde hydro-rov.com/analisis', color: CalendarApp.Color.TURQOISE });
+  props_().setProperty('CAL_ID', cal.getId());
+  return cal;
+}
+function fechaHora_(d, h) { return new Date(d + 'T' + (h || '00:00') + ':00-05:00'); }   // Colombia no tiene horario de verano
+function calDescripcion_(ev) {
+  var L = [TIPO_TXT[ev.tipo] + ' · ' + ({ PROGRAMADO: 'Programado (por confirmar)', CONFIRMADO: 'Confirmado', REALIZADO: 'Realizado', CANCELADO: 'Cancelado' })[ev.estado]];
+  if (ev.cliente) L.push('Cliente: ' + ev.cliente);
+  if (ev.cotId) L.push('Cotización: ' + ev.cotId);
+  if (ev.contacto || ev.telefono) L.push('Contacto: ' + [ev.contacto, ev.telefono].filter(String).join(' · '));
+  if (ev.responsables) L.push('Responsables: ' + ev.responsables);
+  if (ev.notas) L.push('', ev.notas);
+  if (ev.lista && ev.lista.length) { L.push('', 'Lista de verificación:'); ev.lista.forEach(function (x) { L.push((x.ok ? '☑ ' : '☐ ') + x.t); }); }
+  L.push('', 'Agenda: https://hydro-rov.com/analisis/#agenda');
+  return L.join('\n');
+}
+function calSync_(ev) {
+  try {
+    var cal = calendario_(), e = null;
+    if (ev.gcal) { try { e = cal.getEventById(ev.gcal); } catch (x) { e = null; } }
+    if (ev.estado === 'CANCELADO') { if (e) e.deleteEvent(); ev.gcal = ''; return 'ok'; }
+    var titulo = (ev.estado === 'REALIZADO' ? '✓ ' : ev.estado === 'PROGRAMADO' ? '(por confirmar) ' : '') + ev.titulo;
+    var conHora = ev.inicio === ev.fin && !!ev.hora;
+    if (e && e.isAllDayEvent() === conHora) { e.deleteEvent(); e = null; }   // cambió de «todo el día» a «con hora» o al revés
+    var op = { description: calDescripcion_(ev), location: ev.lugar || '', guests: CAL_INVITADOS.join(','), sendInvites: false };
+    if (conHora) {
+      var ini = fechaHora_(ev.inicio, ev.hora), fin = ev.horaFin ? fechaHora_(ev.inicio, ev.horaFin) : new Date(ini.getTime() + (ev.tipo === 'VISITA' ? 2 : 8) * 3600000);
+      if (fin <= ini) fin = new Date(ini.getTime() + 3600000);
+      if (e) e.setTime(ini, fin); else e = cal.createEvent(titulo, ini, fin, op);
+    } else {
+      var d1 = fechaHora_(ev.inicio, '00:00'), d2 = fechaHora_(ev.fin, '00:00'); d2 = new Date(d2.getTime() + 86400000);
+      if (e) e.setAllDayDates(d1, d2); else e = cal.createAllDayEvent(titulo, d1, d2, op);
+    }
+    e.setTitle(titulo); e.setDescription(op.description); e.setLocation(op.location);
+    CAL_INVITADOS.forEach(function (g) { if (!e.getGuestByEmail(g)) e.addGuest(g); });
+    try { e.setColor(ev.tipo === 'VISITA' ? CalendarApp.EventColor.PALE_BLUE : ev.tipo === 'TRABAJO' ? CalendarApp.EventColor.ORANGE : CalendarApp.EventColor.GRAY); } catch (x) { /* color opcional */ }
+    ev.gcal = e.getId();
+    return 'ok';
+  } catch (err) {
+    console.warn('calendario: ' + err);
+    return /permis|authoriz|autoriz|scope/i.test(String(err)) ? 'falta autorizar el acceso al calendario' : String(err && err.message || err).slice(0, 140);
+  }
+}
+/** Ejecutar una vez desde el editor tras publicar 1.9.0: pide el permiso del calendario y crea «HYDRO-ROV · Agenda». */
+function autorizarCalendario() {
+  var c = calendario_();
+  console.log('Calendario listo: ' + c.getName() + ' (' + c.getId() + ')');
+  var A = leerAgenda_(), n = 0;
+  A.eventos.forEach(function (ev) { if (!ev.gcal && ev.estado !== 'CANCELADO' && ev.fin >= Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd')) { calSync_(ev); n++; } });
+  guardarAgenda_(A);
+  console.log('Eventos copiados: ' + n);
+  vapid_();
+}
+
+/* ============================================================ avisos y notificaciones push (1.9.0)
+   Avisos por usuario en _sistema/_avisos.json (campana de la app y contador del ícono). Cada aviso nuevo dispara un
+   Web Push sin contenido a los equipos suscritos del destinatario; el service worker pide el texto con pushNovedades.
+   Firma VAPID (ES256, curva P-256) implementada aquí con BigInt: Apps Script no trae ECDSA. */
+function leerAvisos_() { return JSON.parse(archivoSistema_('_avisos.json', '{"u":{}}').getBlob().getDataAsString('UTF-8') || '{"u":{}}'); }
+function guardarAvisos_(V) { archivoSistema_('_avisos.json', '{"u":{}}').setContent(JSON.stringify(V)); }
+/* destinatarios: los creadores activos, menos quien hizo el cambio */
+function destinatarios_(actor) {
+  var U = usuarios_();
+  return Object.keys(U).filter(function (m) { return m !== actor && U[m].activo !== false && U[m].rol === 'CREADOR'; });
+}
+function avisar_(actor, a) {
+  var dest = destinatarios_(actor);
+  if (!dest.length) return 0;
+  try {
+    conCandado_(function () {
+      var V = leerAvisos_();
+      dest.forEach(function (m) {
+        var L = V.u[m] || [];
+        L.push({ id: 'A' + aleatorio_(5), t: ahora_(), ti: txt_(a.ti, 140), cu: txt_(a.cu, 300), url: txt_(a.url, 120), sec: txt_(a.sec, 20), ref: txt_(a.ref, 40), leido: false });
+        V.u[m] = L.slice(-60);
+      });
+      guardarAvisos_(V);
+    });
+    enviarPush_(dest);
+  } catch (err) { console.warn('avisos: ' + err); }
+  return dest.length;
+}
+function avisosDe_(email) {
+  var L = (leerAvisos_().u[email] || []).slice().reverse();
+  return { ok: true, avisos: L.slice(0, 40), noLeidos: L.filter(function (x) { return !x.leido; }).length };
+}
+function avisosLeidos_(email, q) {
+  var ids = Array.isArray(q.ids) ? q.ids.map(String) : null, sec = txt_(q.seccion, 20), todos = !!q.todos;
+  conCandado_(function () {
+    var V = leerAvisos_(), L = V.u[email] || [];
+    L.forEach(function (x) { if (todos || (ids && ids.indexOf(x.id) >= 0) || (sec && x.sec === sec)) x.leido = true; });
+    V.u[email] = L; guardarAvisos_(V);
+  });
+  return avisosDe_(email);
+}
+
+/* ---------- suscripciones */
+var PUSH_HOSTS = /^https:\/\/(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9.-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com|[a-z0-9.-]+\.push\.services\.mozilla\.com)\//;
+function leerPush_() { return JSON.parse(archivoSistema_('_push.json', '{"subs":[]}').getBlob().getDataAsString('UTF-8') || '{"subs":[]}'); }
+function guardarPush_(S) { archivoSistema_('_push.json', '{"subs":[]}').setContent(JSON.stringify(S)); }
+function pushSuscribir_(ses, q) {
+  var s = q.sub || {}, ep = String(s.endpoint || '');
+  if (!PUSH_HOSTS.test(ep) || ep.length > 900) throw Falla_('Este navegador usa un servicio de notificaciones no reconocido.');
+  var clave = aleatorio_(24);
+  var sid = conCandado_(function () {
+    var S = leerPush_(), x = null;
+    S.subs.forEach(function (o) { if (o.endpoint === ep) x = o; });
+    if (!x) { x = { id: 'P' + aleatorio_(6), endpoint: ep, creado: ahora_() }; S.subs.push(x); }
+    x.email = ses.email; x.clave = sha256_(clave); x.ua = txt_(q.ua, 160); x.act = ahora_();
+    var mios = S.subs.filter(function (o) { return o.email === ses.email; });
+    if (mios.length > 8) { var viejo = mios.sort(function (a, b) { return a.act < b.act ? -1 : 1; })[0]; S.subs = S.subs.filter(function (o) { return o !== viejo; }); }
+    guardarPush_(S);
+    return x.id;
+  });
+  auditar_(ses.email, 'push_activado', txt_(q.ua, 60));
+  return { ok: true, sid: sid, clave: clave };
+}
+function pushQuitar_(ses, q) {
+  var ep = String(q.endpoint || '');
+  conCandado_(function () { var S = leerPush_(); S.subs = S.subs.filter(function (o) { return !(o.endpoint === ep && o.email === ses.email); }); guardarPush_(S); });
+  return { ok: true };
+}
+function pushProbar_(ses) {
+  conCandado_(function () {
+    var V = leerAvisos_(), L = V.u[ses.email] || [];
+    L.push({ id: 'A' + aleatorio_(5), t: ahora_(), ti: 'Notificaciones activadas', cu: 'Este equipo recibirá los avisos de la agenda y de las cotizaciones de HYDRO-ROV.', url: '#agenda', sec: 'sistema', ref: '', leido: false });
+    V.u[ses.email] = L.slice(-60); guardarAvisos_(V);
+  });
+  return { ok: true, enviados: enviarPush_([ses.email]) };
+}
+/* lo llama el service worker: identifica el equipo por su id y su clave (no necesita la sesión) */
+function pushNovedades_(q) {
+  var sid = String(q.sid || ''), clave = String(q.clave || ''), sub = null;
+  leerPush_().subs.forEach(function (o) { if (o.id === sid) sub = o; });
+  if (!sub || !igual_(sub.clave, sha256_(clave))) return { ok: false, error: 'Suscripción no válida.' };
+  var r = avisosDe_(sub.email);
+  return { ok: true, avisos: r.avisos.filter(function (x) { return !x.leido; }).slice(0, 3), noLeidos: r.noLeidos };
+}
+
+/* ---------- envío (VAPID) */
+function b64url_(bytes) { return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, ''); }
+function vapid_() {
+  var P = props_(), d = P.getProperty('VAPID_D'), pub = P.getProperty('VAPID_PUB');
+  if (d && pub) return { d: d, pub: pub };
+  var E = ec_(), k;
+  do { k = E.mod(E.big(Utilities.computeHmacSha256Signature(Utilities.newBlob(Utilities.getUuid() + Utilities.getUuid()).getBytes(), Utilities.newBlob(Utilities.getUuid()).getBytes())), E.N); } while (k === E.cero);
+  var Q = E.afin(E.mul(k, E.G));
+  d = E.hex32(k); pub = b64url_([4].concat(E.bytes32(Q[0]), E.bytes32(Q[1])));
+  P.setProperty('VAPID_D', d); P.setProperty('VAPID_PUB', pub);
+  return { d: d, pub: pub };
+}
+function jwtVapid_(aud) {
+  var cache = CacheService.getScriptCache(), k = 'JWT_' + sha256_(aud).slice(0, 20), t = cache.get(k);
+  if (t) return t;
+  var v = vapid_(), exp = Math.floor(Date.now() / 1000) + 12 * 3600;
+  var ent = b64url_(Utilities.newBlob(JSON.stringify({ typ: 'JWT', alg: 'ES256' })).getBytes()) + '.' + b64url_(Utilities.newBlob(JSON.stringify({ aud: aud, exp: exp, sub: 'mailto:contacto@hydro-rov.com' })).getBytes());
+  t = ent + '.' + b64url_(ec_().firmar(ent, v.d));
+  cache.put(k, t, 11 * 3600);
+  return t;
+}
+function enviarPush_(emails) {
+  var S = leerPush_(), subs = S.subs.filter(function (o) { return emails.indexOf(o.email) >= 0; });
+  if (!subs.length) return 0;
+  var pub = vapid_().pub;
+  var reqs = subs.map(function (o) {
+    var aud = o.endpoint.match(/^https:\/\/[^\/]+/)[0];
+    return { url: o.endpoint, method: 'post', muteHttpExceptions: true, contentType: 'application/octet-stream', payload: '',
+      headers: { TTL: '86400', Urgency: 'high', Authorization: 'vapid t=' + jwtVapid_(aud) + ', k=' + pub } };
+  });
+  var res = UrlFetchApp.fetchAll(reqs), muertas = [], ok = 0;
+  res.forEach(function (r, i) { var c = r.getResponseCode(); if (c === 404 || c === 410) muertas.push(subs[i].endpoint); else if (c < 300) ok++; else console.warn('push ' + c + ': ' + r.getContentText().slice(0, 200)); });
+  if (muertas.length) conCandado_(function () { var S2 = leerPush_(); S2.subs = S2.subs.filter(function (o) { return muertas.indexOf(o.endpoint) < 0; }); guardarPush_(S2); });
+  return ok;
+}
+
+/* ---------- curva P-256 (ECDSA) con BigInt, coordenadas jacobianas */
+var EC_CACHE_ = null;
+function ec_() {
+  if (EC_CACHE_) return EC_CACHE_;
+  var B = function (h) { return BigInt('0x' + h); }, Z = BigInt(0), U = BigInt(1), D2 = BigInt(2), D3 = BigInt(3), D4 = BigInt(4), D8 = BigInt(8);
+  var P = B('ffffffff00000001000000000000000000000000ffffffffffffffffffffffff');
+  var N = B('ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+  var G = [B('6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296'), B('4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5')];
+  function mod(a, m) { var r = a % m; return r < Z ? r + m : r; }
+  function inv(a, m) { var lm = U, hm = Z, low = mod(a, m), high = m; while (low > U) { var r = high / low, nm = hm - lm * r, nw = high - low * r; hm = lm; high = low; lm = nm; low = nw; } return mod(lm, m); }
+  function dbl(p) {
+    if (!p || p[1] === Z) return null;
+    var de = mod(p[2] * p[2], P), ga = mod(p[1] * p[1], P), be = mod(p[0] * ga, P), al = mod(D3 * (p[0] - de) * (p[0] + de), P);
+    var x3 = mod(al * al - D8 * be, P);
+    return [x3, mod(al * (D4 * be - x3) - D8 * ga * ga, P), mod((p[1] + p[2]) * (p[1] + p[2]) - ga - de, P)];
+  }
+  function add(p, q) {
+    if (!p) return q; if (!q) return p;
+    var z1 = mod(p[2] * p[2], P), z2 = mod(q[2] * q[2], P), u1 = mod(p[0] * z2, P), u2 = mod(q[0] * z1, P), s1 = mod(p[1] * q[2] * z2, P), s2 = mod(q[1] * p[2] * z1, P);
+    if (u1 === u2) return s1 === s2 ? dbl(p) : null;
+    var h = mod(u2 - u1, P), r = mod(s2 - s1, P), hh = mod(h * h, P), hhh = mod(h * hh, P), v = mod(u1 * hh, P), x3 = mod(r * r - hhh - D2 * v, P);
+    return [x3, mod(r * (v - x3) - s1 * hhh, P), mod(p[2] * q[2] * h, P)];
+  }
+  function mul(k, pt) { var R = null, Q = [pt[0], pt[1], U]; while (k > Z) { if (k & U) R = add(R, Q); Q = dbl(Q); k = k >> U; } return R; }
+  function afin(p) { var zi = inv(p[2], P), zi2 = mod(zi * zi, P); return [mod(p[0] * zi2, P), mod(p[1] * zi2 * zi, P)]; }
+  function big(bytes) { var h = bytes.map(function (b) { var x = (b < 0 ? b + 256 : b).toString(16); return x.length === 1 ? '0' + x : x; }).join(''); return h ? BigInt('0x' + h) : Z; }
+  function hex32(x) { var h = x.toString(16); while (h.length < 64) h = '0' + h; return h; }
+  function bytes32(x) { var h = hex32(x), o = []; for (var i = 0; i < 64; i += 2) { var b = parseInt(h.substr(i, 2), 16); o.push(b > 127 ? b - 256 : b); } return o; }
+  /* firma ECDSA de un texto con la clave privada (hex). Nonce «cubierto»: HMAC(clave, hash ‖ azar), nunca se repite. */
+  function firmar(texto, dHex) {
+    var d = B(dHex), hb = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, texto, Utilities.Charset.UTF_8), z = big(hb);
+    for (var i = 0; i < 20; i++) {
+      var k = mod(big(Utilities.computeHmacSha256Signature(Utilities.newBlob(hex32(z) + Utilities.getUuid() + i).getBytes(), Utilities.newBlob(dHex).getBytes())), N - U) + U;
+      var R = afin(mul(k, G)), r = mod(R[0], N); if (r === Z) continue;
+      var s = mod(inv(k, N) * (z + r * d), N); if (s === Z) continue;
+      return bytes32(r).concat(bytes32(s));
+    }
+    throw new Error('No se pudo firmar.');
+  }
+  EC_CACHE_ = { N: N, G: G, cero: Z, mod: mod, mul: mul, afin: afin, big: big, hex32: hex32, bytes32: bytes32, firmar: firmar };
+  return EC_CACHE_;
 }
 
 /* ============================================================ instalación (ejecutar una vez desde el editor) */
