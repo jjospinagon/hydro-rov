@@ -1605,11 +1605,31 @@ async function eliminarInforme(id) {
 }
 
 /* ============================================================ exportar y Drive */
+/* Al emitir se elige el formato: HYDRO-ROV (membrete + QR verificable) o alterno (sin membrete, sin QR, consecutivo IT-AAAA-NNN) */
+function elegirFormato(fmt) {
+  return new Promise((res) => {
+    const tipo = fmt === 'pdf' ? 'PDF' : 'Word';
+    const d = abrirModal(`<div class="mh"><h3>Emitir en ${tipo}</h3></div><div class="mb"><p class="mut-p">¿Con qué formato se emite este informe?</p>
+      <div class="formatos">
+        <button type="button" class="fmt-op" data-f="hr"><span class="fmt-mini hr"><i></i><i></i><i></i><b></b></span><span class="fmt-tx"><b>Formato HYDRO-ROV</b><span>Con membrete, logo y datos de la empresa. Lleva código QR: la entidad puede verificar en línea que es auténtico.</span><em>Consecutivo ${esc(S.inf.id)}</em></span></button>
+        <button type="button" class="fmt-op" data-f="alt"><span class="fmt-mini alt"><i></i><i></i><i></i></span><span class="fmt-tx"><b>Formato alterno</b><span>Sin membrete ni datos de la empresa, con otra presentación. No lleva QR y no se puede verificar en línea.</span><em>${S.inf.alt ? 'Consecutivo ' + esc(S.inf.alt) : 'Consecutivo propio IT-AAAA-NNN'}</em></span></button>
+      </div></div><div class="mf"><button class="btn" data-f="x">Cancelar</button></div>`);
+    let hecho = false;
+    const fin = (v) => { if (hecho) return; hecho = true; cerrarModal(); res(v); };
+    d.addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (b) fin(b.dataset.f === 'x' ? null : b.dataset.f); });
+  });
+}
 async function exportar(fmt) {
   if (!S.inf) return;
+  const formato = await elegirFormato(fmt); if (!formato) return;
   await guardarAhora();
   if (S.cola.length) { const p = progreso('Terminando de subir fotos a Drive…'); while (S.cola.length) { p.set(0.5); await sleep(500); } p.fin(); }
-  try { await window.HRExport[fmt](S.inf, { subir: !esLector() }); }
+  const op = { subir: !esLector(), formato };
+  if (formato === 'alt') {
+    try { const r = await apiOk('consecutivoAlterno', { id: S.inf.id }); op.numero = r.numero; S.inf.alt = r.numero; }
+    catch (e) { toast('No se pudo asignar el consecutivo del formato alterno: ' + esc(e.message), 'err', 8000); return; }
+  }
+  try { await window.HRExport[fmt](S.inf, op); }
   catch (e) { console.error(e); toast('No se pudo exportar: ' + esc(e.message), 'err', 8000); }
 }
 function abrirDrive() { if (S.carpeta) window.open(S.carpeta, '_blank', 'noopener'); }

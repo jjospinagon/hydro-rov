@@ -12,9 +12,10 @@ function cargar(src) {
 }
 const hexRGB = (h) => [1, 3, 5].map((i) => parseInt(h.substr(i, 2), 16));
 const txtPDF = (s) => String(s == null ? '' : s).replace(/→/g, '–').replace(/[^\u0000-ÿ–—‘’“”•…€]/g, '');
-const nombreArchivo = (I, ext) => {
+const nombreArchivo = (I, ext, op) => {
   let p = String(I.general.proyecto || 'sin título').replace(/[\\/:*?"<>|\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (p.length > 70) p = p.slice(0, 70).replace(/[\s,.;:-]+\S*$/, '');
+  if (op && op.formato === 'alt') return op.numero + ' Informe técnico de inspección - ' + p + '.' + ext;
   return I.id + ' Informe de inspección - ' + p + '.' + ext;
 };
 const etq = (t) => (t.pozoIni || '¿?') + ' → ' + (t.pozoFin || '¿?');
@@ -65,7 +66,7 @@ const fotoDe = (o) => (o.foto && (FOTOS_OK[o.foto.id] || HR.S.fotos[o.foto.id] |
 function b64aU8(dataUrl) { const b = atob(dataUrl.split(',')[1]); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
 function blobB64(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
 async function entregar(I, blob, fmt, op, p, em) {
-  const nombre = nombreArchivo(I, fmt);
+  const nombre = nombreArchivo(I, fmt, op);
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
   if (!op.subir) { HR.toast('Archivo descargado.', 'ok'); return; }
@@ -464,5 +465,288 @@ async function docx(I, op) {
   } finally { p.fin(); }
 }
 
-window.HRExport = { pdf, docx, mapaPNG };
+/* ====================================================================== FORMATO ALTERNO
+   Sin membrete, sin logo, sin datos de la empresa y sin QR. Mismo contenido técnico que el formato HYDRO-ROV,
+   con otra composición: portada propia, tipografía con serifa, grafito y verde bosque, tablas de dos columnas.
+   Numeración propia (IT-AAAA-NNN) asignada por el servidor. No se registra emisión, así que no es verificable. */
+const A_TX = [34, 34, 34], A_AC = [35, 73, 59], A_GR = [105, 105, 105], A_LN = [196, 200, 197], A_FO = [239, 242, 240];
+const gradoTxt = (g) => (g ? g + ' · ' + (HR.GRADOS[g] ? HR.GRADOS[g].n : '') : '—');
+
+async function pdfAlt(I, op) {
+  const p = HR.progreso('Preparando el PDF (formato alterno)…');
+  try {
+    await cargar('lib/jspdf-2.5.2.min.js'); await cargar('lib/jspdf-autotable-3.8.4.min.js');
+    p.set(0.05); const dims = await prepararFotos(I, p);
+    const g = I.general, NUM = op.numero;
+    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
+    doc.setProperties({ title: NUM + ' · ' + (g.proyecto || ''), subject: 'Informe técnico de inspección de redes', author: '', creator: '' });
+    const M = 22, W = 210, H = 297, CW = W - 2 * M, TOP = 28, BOT = 276; let y = TOP;
+    const pag = () => { doc.addPage(); y = TOP; };
+    const espacio = (h) => { if (y + h > BOT) pag(); };
+    const f = (est, tam, c) => { doc.setFont('times', est); doc.setFontSize(tam); doc.setTextColor(...(c || A_TX)); };
+    const centro = (t, yy) => doc.text(txtPDF(t), W / 2, yy, { align: 'center' });
+    let nSec = 0;
+    const titulo = (t) => {
+      espacio(18); y += 3; nSec++;
+      doc.setDrawColor(...A_LN); doc.setLineWidth(0.25); doc.line(M, y, W - M, y);
+      f('bold', 11.5, A_AC); doc.setCharSpace(0.5); doc.text(txtPDF(nSec + '.  ' + t.toUpperCase()), M, y + 6.5); doc.setCharSpace(0);
+      y += 12;
+    };
+    const subtitulo = (t) => { espacio(12); f('bolditalic', 11.5, A_TX); doc.text(txtPDF(t), M, y + 4.5); y += 8.5; };
+    const rotulo = (t) => { espacio(10); f('bold', 10, A_AC); doc.text(txtPDF(t), M, y + 4); y += 6.5; };
+    const parrafo = (t, est) => {
+      f(est || 'normal', 10.5, A_TX);
+      String(t || '').split(/\n/).forEach((par) => { const ls = doc.splitTextToSize(txtPDF(par) || ' ', CW); ls.forEach((l, k) => { espacio(5); if (k < ls.length - 1) doc.text(l, M, y + 3.8, { maxWidth: CW, align: 'justify' }); else doc.text(l, M, y + 3.8); y += 5; }); y += 1.4; });
+      y += 1.5;
+    };
+    const tabla = (cfg) => {
+      doc.autoTable(Object.assign({ startY: y, margin: { left: M, right: M, top: TOP, bottom: H - BOT }, theme: 'grid',
+        styles: { font: 'times', fontSize: 9.6, cellPadding: { top: 1.8, bottom: 1.8, left: 2.4, right: 2.4 }, textColor: A_TX, lineColor: A_LN, lineWidth: 0.25, overflow: 'linebreak' },
+        headStyles: { fillColor: A_FO, textColor: A_AC, fontStyle: 'bold', fontSize: 9.4, lineColor: A_LN } }, cfg));
+      y = doc.lastAutoTable.finalY + 6;
+    };
+    const kv = (pares) => { if (pares.length) tabla({ body: pares.map(([k, v]) => [k, v].map(txtPDF)), columnStyles: { 0: { cellWidth: 52, fontStyle: 'bold', textColor: A_GR } } }); };
+
+    /* portada (página completa) */
+    f('bold', 10.5, A_AC); doc.setCharSpace(1.6); centro('INFORME TÉCNICO', 52); doc.setCharSpace(0);
+    f('italic', 11, A_GR); centro('Inspección de redes de alcantarillado por circuito cerrado de televisión (CCTV)', 59);
+    doc.setDrawColor(...A_AC); doc.setLineWidth(0.8); doc.line(W / 2 - 40, 66, W / 2 + 40, 66); doc.setLineWidth(0.25); doc.line(W / 2 - 40, 67.6, W / 2 + 40, 67.6);
+    f('bold', 21, A_TX); let yy = 84; doc.splitTextToSize(txtPDF(g.proyecto || 'Informe sin título'), CW - 10).forEach((l) => { centro(l, yy); yy += 9; });
+    f('italic', 12, A_GR); const lugar = [g.cliente, [g.municipio, g.departamento].filter(Boolean).join(', ')].filter(Boolean);
+    yy += 3; lugar.forEach((l) => { centro(l, yy); yy += 6; });
+    y = Math.max(yy + 14, 130);
+    const portada = [['Consecutivo', NUM], ['Contrato', g.contrato], ['Fecha del informe', HR.fFecha(g.fechaInforme)], ['Fecha de inspección', HR.fFecha(g.fechaInspeccion)], ['Tramos inspeccionados', String(I.tramos.length)], ['Sector', g.sector]].filter(([, v]) => v);
+    doc.autoTable({ startY: y, margin: { left: W / 2 - 60, right: W / 2 - 60 }, theme: 'plain', body: portada.map((r) => r.map(txtPDF)),
+      styles: { font: 'times', fontSize: 10.5, cellPadding: { top: 2.4, bottom: 2.4, left: 3, right: 3 }, textColor: A_TX, lineColor: A_LN, lineWidth: { bottom: 0.25 } },
+      columnStyles: { 0: { cellWidth: 48, textColor: A_GR, fontStyle: 'italic' }, 1: { fontStyle: 'bold' } } });
+    pag();
+
+    titulo('Información general'); kv(datosGenerales(g));
+    if (g.notasCampo) parrafo(g.notasCampo);
+    const conCam = I.tramos.filter((t) => HR.camOk(t.cIni) || HR.camOk(t.cFin));
+    if (conCam.length) {
+      p.set(0.2, 'Dibujando la localización de los tramos…');
+      const mg = await mapaPNG(conCam, I.tramos);
+      if (mg) { const mh = CW * (mg.h / mg.w); espacio(mh + 16); rotulo('Localización de los tramos inspeccionados'); doc.addImage(mg.url, 'JPEG', M, y, CW, mh); doc.setDrawColor(...A_TX); doc.setLineWidth(0.3); doc.rect(M, y, CW, mh); y += mh + 3; f('italic', 9, A_GR); doc.text('Figura 1. Localización general. Base cartográfica © OpenStreetMap.', M, y + 3); y += 9; }
+    }
+    titulo('Alcance y metodología');
+    if (I.alcance) parrafo(I.alcance);
+    tabla({ head: [['Grado', 'Severidad']], body: HR.GRADOS.slice(1).map((x) => [String(x.g), x.n]), tableWidth: 80,
+      didParseCell: (d) => { if (d.section === 'body' && d.column.index === 0) { d.cell.styles.textColor = hexRGB(HR.GRADOS[Number(d.cell.raw)].c); d.cell.styles.fontStyle = 'bold'; d.cell.styles.halign = 'center'; } } });
+
+    espacio(95); titulo('Resultados por tramo');
+    let nFoto = 0, nFig = 1;
+    for (let ti = 0; ti < I.tramos.length; ti++) {
+      const t = I.tramos[ti]; p.set(0.25 + 0.55 * (ti / I.tramos.length), `Armando el tramo ${ti + 1} de ${I.tramos.length}…`);
+      espacio(70); subtitulo(`${nSec}.${ti + 1}  Tramo ${etq(t)}`);
+      kv(datosTramo(t));
+      if (HR.camOk(t.cIni) || HR.camOk(t.cFin)) {
+        const mt = await mapaPNG([t], I.tramos);
+        if (mt) { const mh = CW * (mt.h / mt.w); espacio(mh + 10); doc.addImage(mt.url, 'JPEG', M, y, CW, mh); doc.setDrawColor(...A_TX); doc.setLineWidth(0.3); doc.rect(M, y, CW, mh); y += mh + 3; nFig++; f('italic', 9, A_GR); doc.text(txtPDF(`Figura ${nFig}. Tramo ${etq(t)}. Base cartográfica © OpenStreetMap.`), M, y + 3); y += 8; }
+      }
+      const pf = await perfilPNG(t), ph = CW * (pf.h / pf.w);
+      espacio(ph + 10); doc.addImage(pf.url, 'PNG', M, y, CW, ph); doc.setDrawColor(...A_LN); doc.setLineWidth(0.25); doc.rect(M, y, CW, ph); y += ph + 3; nFig++; f('italic', 9, A_GR); doc.text(txtPDF(`Figura ${nFig}. Perfil del tramo ${etq(t)} con la ubicación de los hallazgos.`), M, y + 3); y += 8;
+      if (t.obs.length) {
+        espacio(30); rotulo('Hallazgos');
+        tabla({ rowPageBreak: 'avoid', head: [['N.°', 'Abscisa (m)', 'Código', 'Descripción', 'Posición', 'Severidad']],
+          body: t.obs.map((o, i) => [String(i + 1), HR.nf(o.dist) + (o.distFin != null ? ' a ' + HR.nf(o.distFin) : ''), (o.codigo || '') + (HR.COD[o.codigo] ? ' – ' + HR.COD[o.codigo].n : ''), o.desc || '', o.hIni ? o.hIni + (o.hFin ? ' a ' + o.hFin : '') + ' h' : '', o.grado ? gradoTxt(Number(o.grado)) : '—'].map(txtPDF)),
+          columnStyles: { 0: { cellWidth: 9, halign: 'center' }, 1: { cellWidth: 19 }, 2: { cellWidth: 34 }, 4: { cellWidth: 17 }, 5: { cellWidth: 22 } },
+          didParseCell: (d) => { if (d.section === 'body' && d.column.index === 5) { const gr = Number(String(d.cell.raw).charAt(0)); if (gr) { d.cell.styles.textColor = hexRGB(HR.GRADOS[gr].c); d.cell.styles.fontStyle = 'bold'; } } } });
+      } else parrafo('No se registraron hallazgos en el tramo.', 'italic');
+      const conF = t.obs.map((o, i) => ({ o, i, src: fotoDe(o) })).filter((x) => x.src);
+      if (conF.length) {
+        espacio(((CW - 8) / 2) * 0.75 + 30); rotulo('Registro fotográfico');
+        const gap = 8, cw = (CW - gap) / 2;
+        for (let k = 0; k < conF.length; k += 2) {
+          const fila = conF.slice(k, k + 2);
+          const ih = cw * 0.72;
+          const caps = fila.map((fo) => { nFoto++; f('italic', 9, A_TX); return doc.splitTextToSize(txtPDF('Fotografía ' + nFoto + '. ' + leyendaFoto(fo.o, fo.i, nFoto).replace(/^Foto \d+ · /, '') + (fo.o.desc ? '. ' + fo.o.desc : '')), cw).slice(0, 5); });
+          const capH = Math.max(...caps.map((c) => c.length * 3.9)) + 3;
+          espacio(ih + capH + 6);
+          fila.forEach((fo, j) => {
+            const x = M + j * (cw + gap), d = dims[fo.o.foto.id] || { w: 4, h: 3 };
+            const k2 = Math.max(cw / d.w, ih / d.h), w2 = d.w * k2, h2 = d.h * k2;
+            doc.saveGraphicsState && doc.saveGraphicsState();
+            doc.rect(x, y, cw, ih, null); doc.clip && doc.clip(); doc.discardPath && doc.discardPath();
+            doc.addImage(fo.src, 'JPEG', x + (cw - w2) / 2, y + (ih - h2) / 2, w2, h2, undefined, 'FAST');
+            doc.restoreGraphicsState && doc.restoreGraphicsState();
+            doc.setDrawColor(...A_TX); doc.setLineWidth(0.3); doc.rect(x, y, cw, ih);
+            f('italic', 9, A_TX); caps[j].forEach((l, n) => doc.text(l, x, y + ih + 4.5 + n * 3.9));
+          });
+          y += ih + capH + 6;
+        }
+      }
+      if (t.conclusion) { rotulo('Conclusión del tramo'); parrafo(t.conclusion); }
+      if (t.recomendacion) { rotulo('Recomendación del tramo'); parrafo(t.recomendacion); }
+    }
+    p.set(0.82, 'Cerrando el documento…');
+    titulo('Conclusiones'); parrafo(I.conclusiones || '—');
+    titulo('Recomendaciones'); parrafo(I.recomendaciones || '—');
+    if (I.anexos) { titulo('Anexos'); parrafo(I.anexos); }
+    const FIR = firmasDe(I);
+    if (FIR.length) {
+      espacio(Math.min(Math.ceil(FIR.length / 2) * 42 + 10, 200)); y += 4;
+      const filas = []; for (let k = 0; k < FIR.length; k += 2) filas.push([FIR[k], FIR[k + 1] || null]);
+      const celdaF = (fi) => (fi ? txtPDF(['\n\n\n', '_______________________________', fi.nombre || ' ', fi.det, fi.rol].filter((x) => x !== '').join('\n')) : '');
+      doc.autoTable({ startY: y, margin: { left: M, right: M, top: TOP, bottom: H - BOT }, theme: 'grid', rowPageBreak: 'avoid', body: filas.map((r) => r.map(celdaF)),
+        styles: { font: 'times', fontSize: 9.8, cellPadding: 4, textColor: A_TX, lineColor: A_LN, lineWidth: 0.25, halign: 'center', valign: 'bottom', minCellHeight: 34 },
+        columnStyles: { 0: { cellWidth: CW / 2 }, 1: { cellWidth: CW / 2 } } });
+      y = doc.lastAutoTable.finalY + 4;
+    }
+
+    /* encabezado y pie neutros (sin membrete) desde la página 2 */
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i++) {
+      doc.setPage(i);
+      if (i > 1) {
+        f('italic', 9, A_GR); doc.text('Informe técnico de inspección de redes', M, 15);
+        f('bold', 9, A_TX); doc.text(txtPDF(NUM), W - M, 15, { align: 'right' });
+        doc.setDrawColor(...A_TX); doc.setLineWidth(0.4); doc.line(M, 18, W - M, 18); doc.setLineWidth(0.15); doc.line(M, 19.2, W - M, 19.2);
+      }
+      if (i > 1) { f('normal', 9, A_GR); doc.text(`${i} / ${n}`, W / 2, 287, { align: 'center' }); }
+    }
+    p.set(0.9, 'Generando el archivo…');
+    await entregar(I, doc.output('blob'), 'pdf', op, p, null);
+  } finally { p.fin(); }
+}
+
+async function docxAlt(I, op) {
+  const p = HR.progreso('Preparando el Word (formato alterno)…');
+  try {
+    await cargar('lib/docx-9.5.1.min.js');
+    const D = window.docx, g = I.general, NUM = op.numero;
+    const { Document, Packer, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType, AlignmentType, Header, Footer, PageNumber, BorderStyle, ShadingType, TabStopType, VerticalAlign, TableLayoutType, PageBreak } = D;
+    p.set(0.05); const dims = await prepararFotos(I, p);
+    const CWd = 9070, PX = 604; // márgenes de 2,2 cm
+    const AC = '23493B', TXc = '222222', GRc = '696969', LNc = 'C4C8C5', FOc = 'EFF2F0', FONT = 'Cambria';
+    const sinB = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+    const lin = { style: BorderStyle.SINGLE, size: 4, color: LNc };
+    const bordes = { top: lin, bottom: lin, left: lin, right: lin, insideHorizontal: lin, insideVertical: lin };
+    const R = (text, o = {}) => new TextRun({ text, font: FONT, bold: o.b, italics: o.i, color: o.c || TXc, size: o.s || 21, characterSpacing: o.sp, allCaps: o.caps });
+    const P = (t, o = {}) => new Paragraph({ alignment: o.al, spacing: { before: o.before || 0, after: o.after == null ? 120 : o.after, line: 288 }, keepNext: o.kn, children: [].concat(t).map((x) => (typeof x === 'string' ? R(x, o) : x)) });
+    const parrafos = (t, o = {}) => String(t || '—').split(/\n+/).map((l) => P(l, Object.assign({ al: AlignmentType.JUSTIFIED }, o)));
+    let nSec = 0;
+    const H1 = (t) => { nSec++; return new Paragraph({ spacing: { before: 360, after: 160 }, keepNext: true, border: { top: { style: BorderStyle.SINGLE, size: 4, color: LNc, space: 8 } }, children: [R(nSec + '.  ' + t, { b: true, c: AC, s: 23, sp: 12, caps: true })] }); };
+    const H2 = (t) => P(t, { b: true, i: true, s: 23, before: 240, after: 100, kn: true });
+    const H3 = (t) => P(t, { b: true, c: AC, s: 20, before: 140, after: 80, kn: true });
+    const leyenda = (t) => P(t, { i: true, s: 18, c: GRc, after: 160 });
+    const celda = (t, o = {}) => new TableCell({ width: { size: o.w, type: WidthType.DXA }, shading: o.f ? { type: ShadingType.CLEAR, color: 'auto', fill: o.f } : undefined, verticalAlign: o.va || VerticalAlign.CENTER,
+      margins: { top: 60, bottom: 60, left: 110, right: 110 }, children: String(t == null ? '' : t).split('\n').map((l) => new Paragraph({ alignment: o.al, children: [R(l, { s: o.s || 19, b: o.b, i: o.i, c: o.c })] })) });
+    const kv = (pares) => {
+      if (!pares.length) return [];
+      const w = [2950, CWd - 2950];
+      return [new Table({ width: { size: CWd, type: WidthType.DXA }, columnWidths: w, layout: TableLayoutType.FIXED, borders: bordes,
+        rows: pares.map(([k, v]) => new TableRow({ children: [celda(k, { w: w[0], b: true, c: GRc }), celda(v, { w: w[1] })] })) }), P('', { after: 60 })];
+    };
+    const img = (url, w, h, tipo) => new ImageRun({ type: tipo || 'jpg', data: b64aU8(url), transformation: { width: Math.round(w), height: Math.round(h) } });
+    const cuerpo = [];
+
+    /* portada */
+    cuerpo.push(P('', { after: 1400 }));
+    cuerpo.push(P('Informe técnico', { al: AlignmentType.CENTER, b: true, c: AC, s: 21, sp: 60, caps: true, after: 80 }));
+    cuerpo.push(P('Inspección de redes de alcantarillado por circuito cerrado de televisión (CCTV)', { al: AlignmentType.CENTER, i: true, c: GRc, s: 22, after: 160 }));
+    cuerpo.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 360 }, border: { bottom: { style: BorderStyle.DOUBLE, size: 6, color: AC, space: 1 } }, indent: { left: 2600, right: 2600 }, children: [R(' ')] }));
+    cuerpo.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 220, line: 340 }, children: [R(g.proyecto || 'Informe sin título', { b: true, s: 40 })] }));
+    [g.cliente, [g.municipio, g.departamento].filter(Boolean).join(', ')].filter(Boolean).forEach((l) => cuerpo.push(P(l, { al: AlignmentType.CENTER, i: true, c: GRc, s: 24, after: 60 })));
+    cuerpo.push(P('', { after: 600 }));
+    const portada = [['Consecutivo', NUM], ['Contrato', g.contrato], ['Fecha del informe', HR.fFecha(g.fechaInforme)], ['Fecha de inspección', HR.fFecha(g.fechaInspeccion)], ['Tramos inspeccionados', String(I.tramos.length)], ['Sector', g.sector]].filter(([, v]) => v);
+    const wp = [2600, 3400], bAbajo = { top: sinB, left: sinB, right: sinB, bottom: lin };
+    cuerpo.push(new Table({ alignment: AlignmentType.CENTER, width: { size: 6000, type: WidthType.DXA }, columnWidths: wp, layout: TableLayoutType.FIXED, borders: { top: sinB, bottom: sinB, left: sinB, right: sinB, insideHorizontal: lin, insideVertical: sinB },
+      rows: portada.map(([k, v]) => new TableRow({ children: [
+        new TableCell({ width: { size: wp[0], type: WidthType.DXA }, borders: bAbajo, margins: { top: 80, bottom: 80, left: 100, right: 100 }, children: [new Paragraph({ children: [R(k, { i: true, c: GRc })] })] }),
+        new TableCell({ width: { size: wp[1], type: WidthType.DXA }, borders: bAbajo, margins: { top: 80, bottom: 80, left: 100, right: 100 }, children: [new Paragraph({ children: [R(v, { b: true })] })] })] })) }));
+    cuerpo.push(new Paragraph({ children: [new PageBreak()] }));
+
+    cuerpo.push(H1('Información general'), ...kv(datosGenerales(g)));
+    if (g.notasCampo) cuerpo.push(...parrafos(g.notasCampo));
+    let nFig = 0;
+    const conCam = I.tramos.filter((t) => HR.camOk(t.cIni) || HR.camOk(t.cFin));
+    if (conCam.length) {
+      p.set(0.15, 'Dibujando la localización de los tramos…');
+      const mg = await mapaPNG(conCam, I.tramos);
+      if (mg) { nFig++; cuerpo.push(H3('Localización de los tramos inspeccionados'), new Paragraph({ keepNext: true, spacing: { after: 60 }, children: [img(mg.url, PX, PX * (mg.h / mg.w))] }), leyenda(`Figura ${nFig}. Localización general. Base cartográfica © OpenStreetMap.`)); }
+    }
+    cuerpo.push(H1('Alcance y metodología'));
+    if (I.alcance) cuerpo.push(...parrafos(I.alcance));
+    cuerpo.push(new Table({ width: { size: 4600, type: WidthType.DXA }, columnWidths: [1100, 3500], borders: bordes,
+      rows: [new TableRow({ tableHeader: true, children: [celda('Grado', { w: 1100, f: FOc, c: AC, b: true }), celda('Severidad', { w: 3500, f: FOc, c: AC, b: true })] })]
+        .concat(HR.GRADOS.slice(1).map((x) => new TableRow({ children: [celda(String(x.g), { w: 1100, c: x.c.slice(1).toUpperCase(), b: true, al: AlignmentType.CENTER }), celda(x.n, { w: 3500 })] }))) }));
+
+    cuerpo.push(H1('Resultados por tramo'));
+    const secR = nSec; let nFoto = 0;
+    for (let ti = 0; ti < I.tramos.length; ti++) {
+      const t = I.tramos[ti]; p.set(0.2 + 0.6 * (ti / I.tramos.length), `Armando el tramo ${ti + 1} de ${I.tramos.length}…`);
+      cuerpo.push(H2(`${secR}.${ti + 1}  Tramo ${etq(t)}`), ...kv(datosTramo(t)));
+      if (HR.camOk(t.cIni) || HR.camOk(t.cFin)) { const mt = await mapaPNG([t], I.tramos); if (mt) { nFig++; cuerpo.push(new Paragraph({ keepNext: true, spacing: { after: 60 }, children: [img(mt.url, PX, PX * (mt.h / mt.w))] }), leyenda(`Figura ${nFig}. Tramo ${etq(t)}. Base cartográfica © OpenStreetMap.`)); } }
+      const pf = await perfilPNG(t); nFig++;
+      cuerpo.push(new Paragraph({ keepNext: true, spacing: { after: 60 }, children: [img(pf.url, PX, PX * (pf.h / pf.w), 'png')] }), leyenda(`Figura ${nFig}. Perfil del tramo ${etq(t)} con la ubicación de los hallazgos.`));
+      if (t.obs.length) {
+        const w = [520, 1150, 2200, 2750, 1150, 1300];
+        cuerpo.push(H3('Hallazgos'), new Table({ width: { size: CWd, type: WidthType.DXA }, columnWidths: w, layout: TableLayoutType.FIXED, borders: bordes,
+          rows: [new TableRow({ tableHeader: true, children: ['N.°', 'Abscisa (m)', 'Código', 'Descripción', 'Posición', 'Severidad'].map((h, i) => celda(h, { w: w[i], f: FOc, c: AC, b: true, s: 18 })) })]
+            .concat(t.obs.map((o, i) => new TableRow({ cantSplit: true, children: [
+              celda(String(i + 1), { w: w[0], al: AlignmentType.CENTER }), celda(HR.nf(o.dist) + (o.distFin != null ? ' a ' + HR.nf(o.distFin) : ''), { w: w[1] }),
+              celda((o.codigo || '') + (HR.COD[o.codigo] ? ' – ' + HR.COD[o.codigo].n : ''), { w: w[2] }), celda(o.desc || '', { w: w[3] }),
+              celda(o.hIni ? o.hIni + (o.hFin ? ' a ' + o.hFin : '') + ' h' : '', { w: w[4] }),
+              celda(o.grado ? gradoTxt(Number(o.grado)) : '—', { w: w[5], b: !!o.grado, c: o.grado ? HR.GRADOS[o.grado].c.slice(1).toUpperCase() : undefined })] }))) }), P('', { after: 60 }));
+      } else cuerpo.push(P('No se registraron hallazgos en el tramo.', { i: true, c: GRc }));
+      const conF = t.obs.map((o, i) => ({ o, i, src: fotoDe(o) })).filter((x) => x.src);
+      if (conF.length) {
+        cuerpo.push(H3('Registro fotográfico'));
+        const cw = CWd / 2, ipx = 290, ihpx = 210, filas = [];
+        for (let k = 0; k < conF.length; k += 2) {
+          const fila = conF.slice(k, k + 2).map((fo) => {
+            nFoto++; const d = dims[fo.o.foto.id] || { w: 4, h: 3 }, kk = Math.min(ipx / d.w, ihpx / d.h);
+            return new TableCell({ width: { size: cw, type: WidthType.DXA }, borders: { top: sinB, bottom: sinB, left: sinB, right: sinB }, margins: { top: 60, bottom: 160, left: 60, right: 160 }, children: [
+              new Paragraph({ children: [img(fo.src, d.w * kk, d.h * kk)] }),
+              new Paragraph({ spacing: { before: 60 }, children: [R('Fotografía ' + nFoto + '. ' + leyendaFoto(fo.o, fo.i, nFoto).replace(/^Foto \d+ · /, '') + (fo.o.desc ? '. ' + fo.o.desc : ''), { i: true, s: 17 })] })] });
+          });
+          if (fila.length === 1) fila.push(new TableCell({ width: { size: cw, type: WidthType.DXA }, borders: { top: sinB, bottom: sinB, left: sinB, right: sinB }, children: [new Paragraph('')] }));
+          filas.push(new TableRow({ cantSplit: true, children: fila }));
+        }
+        cuerpo.push(new Table({ width: { size: CWd, type: WidthType.DXA }, columnWidths: [cw, cw], layout: TableLayoutType.FIXED, borders: { top: sinB, bottom: sinB, left: sinB, right: sinB, insideHorizontal: sinB, insideVertical: sinB }, rows: filas }));
+      }
+      if (t.conclusion) cuerpo.push(H3('Conclusión del tramo'), ...parrafos(t.conclusion));
+      if (t.recomendacion) cuerpo.push(H3('Recomendación del tramo'), ...parrafos(t.recomendacion));
+    }
+    p.set(0.82, 'Cerrando el documento…');
+    cuerpo.push(H1('Conclusiones'), ...parrafos(I.conclusiones));
+    cuerpo.push(H1('Recomendaciones'), ...parrafos(I.recomendaciones));
+    if (I.anexos) cuerpo.push(H1('Anexos'), ...parrafos(I.anexos));
+    const FIR = firmasDe(I);
+    if (FIR.length) {
+      const fc = (fi) => new TableCell({ width: { size: CWd / 2, type: WidthType.DXA }, verticalAlign: VerticalAlign.BOTTOM, margins: { top: 900, bottom: 140, left: 160, right: 160 }, children: fi ? [
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [R('_______________________________', { c: GRc })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [R(fi.nombre || ' ', { b: true, s: 20 })] }),
+        ...(fi.det ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [R(fi.det, { s: 18, c: GRc })] })] : []),
+        new Paragraph({ alignment: AlignmentType.CENTER, children: [R(fi.rol, { i: true, s: 18, c: AC })] })] : [new Paragraph('')] });
+      const filasF = []; for (let k = 0; k < FIR.length; k += 2) filasF.push(new TableRow({ cantSplit: true, children: [fc(FIR[k]), fc(FIR[k + 1])] }));
+      cuerpo.push(P('', { after: 200 }), new Table({ width: { size: CWd, type: WidthType.DXA }, columnWidths: [CWd / 2, CWd / 2], borders: bordes, rows: filasF }));
+    }
+
+    const doc = new Document({
+      creator: '', title: NUM + ' · ' + (g.proyecto || ''), description: 'Informe técnico de inspección de redes',
+      styles: { default: { document: { run: { font: FONT, size: 21, color: TXc } } } },
+      sections: [{
+        properties: { titlePage: true, page: { size: { width: 11906, height: 16838 }, margin: { top: 1500, bottom: 1300, left: 1418, right: 1418, header: 620, footer: 560 } } },
+        headers: {
+          first: new Header({ children: [new Paragraph('')] }),
+          default: new Header({ children: [new Paragraph({ tabStops: [{ type: TabStopType.RIGHT, position: CWd }], border: { bottom: { style: BorderStyle.DOUBLE, size: 4, color: TXc, space: 4 } },
+            children: [R('Informe técnico de inspección de redes', { i: true, s: 17, c: GRc }), R('\t' + NUM, { b: true, s: 17 })] })] }) },
+        footers: {
+          first: new Footer({ children: [new Paragraph('')] }),
+          default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT, ' / ', PageNumber.TOTAL_PAGES], font: FONT, size: 17, color: GRc })] })] }) },
+        children: cuerpo
+      }]
+    });
+    p.set(0.9, 'Generando el archivo…');
+    await entregar(I, await Packer.toBlob(doc), 'docx', op, p, null);
+  } finally { p.fin(); }
+}
+
+window.HRExport = {
+  pdf: (I, op = {}) => (op.formato === 'alt' ? pdfAlt(I, op) : pdf(I, op)),
+  docx: (I, op = {}) => (op.formato === 'alt' ? docxAlt(I, op) : docx(I, op)),
+  mapaPNG
+};
 })();

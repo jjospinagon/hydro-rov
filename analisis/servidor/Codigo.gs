@@ -17,7 +17,7 @@
  * Instalación: ver LEEME-DESPLIEGUE.md. Ejecutar una vez la función instalar() desde el editor para autorizar.
  */
 
-var VERSION = '1.6.0 (2026-11-25)';
+var VERSION = '1.7.0 (2026-11-25)';
 
 var CFG = {
   RAIZ_NOMBRE: 'HYDRO-ROV · Informes de inspección',
@@ -96,6 +96,7 @@ function despachar_(q) {
     case 'videoLeer': return videoLeer_(ses, q);
     case 'subirExport': puede_(ses, 'editar'); return subirExport_(ses, q);
     case 'emitir': puede_(ses, 'editar'); return emitir_(ses, q);
+    case 'consecutivoAlterno': puede_(ses, 'editar'); return consecutivoAlterno_(ses, q);
     case 'enlaceDrive': return enlaceDrive_(ses, q);
     case 'usuarios': puede_(ses, 'admin'); return usuariosListar_();
     case 'usuarioGuardar': puede_(ses, 'admin'); return usuarioGuardar_(ses, q);
@@ -495,6 +496,22 @@ function ubicarCarpeta_(e, inf) {
 function crearCarpetas_(id, titulo, clave) {
   var c = carpetaMes_(clave).createFolder(nombreCarpeta_(id, titulo));
   return { carpeta: c.getId(), fFotos: c.createFolder('fotos').getId(), fVideos: c.createFolder('videos').getId(), fExport: c.createFolder('exportados').getId(), c: c };
+}
+
+/* Formato alterno (sin membrete ni QR): numeración propia IT-AAAA-NNN, una por informe y estable en el tiempo. */
+function consecutivoAlterno_(ses, q) {
+  var e0 = entradaOFalla_(q.id);
+  return conCandado_(function () {
+    var ix = leerIndice_(), e = entrada_(ix, e0.id);
+    if (e.alt) return { ok: true, numero: e.alt, nuevo: false };
+    var y = Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy'), k = 'CONSEC_ALT_' + y;
+    var n = Number(props_().getProperty(k) || 0) + 1;
+    props_().setProperty(k, String(n));
+    e.alt = 'IT-' + y + '-' + ('00' + n).slice(-3);
+    guardarIndice_(ix);
+    auditar_(ses.email, 'consecutivo_alterno', e.id + ' ' + e.alt);
+    return { ok: true, numero: e.alt, nuevo: true };
+  });
 }
 
 function nuevoId_() {
