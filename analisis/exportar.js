@@ -181,7 +181,7 @@ async function emision(I, op) {
   try {
     await cargar('lib/qrcode-1.4.4.js');
     const em = await HR.apiOk('emitir', { id: I.id });
-    const url = new URL('v/?c=' + em.codigo, location.href.replace(/[#?].*$/, '')).href;
+    const url = location.origin + '/verificar/?c=' + em.codigo;
     const qr = window.qrcode(0, 'M'); qr.addData(url); qr.make();
     const n = qr.getModuleCount(), esc2 = 10, mg = 4, c = document.createElement('canvas'); c.width = c.height = (n + mg * 2) * esc2;
     const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#0A2A4A';

@@ -45,7 +45,7 @@ const ESTADOS = { BORRADOR: 'Borrador', REVISION: 'En revisión', EMITIDO: 'Emit
 
 /* ------------------------------------------------------------ perfil del tramo (SVG) */
 function perfilSVG(t, op = {}) {
-  const W = 1000, H = op.alto || 200, x0 = 70, x1 = W - 70, yc = 92;
+  const W = 1000, H = op.alto || 200, x0 = 70, x1 = W - 70, yc = 104;
   const maxD = Math.max(0, ...t.obs.map((o) => Math.max(o.dist || 0, o.distFin || 0)));
   const L = Number(t.longitud) || Number(t.inspeccionada) || maxD || 10;
   const X = (d) => x0 + (Math.max(0, Math.min(L, d)) / L) * (x1 - x0);
@@ -54,11 +54,18 @@ function perfilSVG(t, op = {}) {
   let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="${f}">`;
   s += `<rect x="${x0}" y="${yc - 9}" width="${x1 - x0}" height="18" rx="9" fill="${tubo}"/>`;
   const insp = Number(t.inspeccionada);
-  if (insp && insp < L) s += `<rect x="${X(insp)}" y="${yc - 9}" width="${x1 - X(insp)}" height="18" fill="${op.claro ? '#f3d9d6' : '#3a1f27'}"/><text x="${(X(insp) + x1) / 2}" y="${yc + 4}" text-anchor="middle" font-size="11" fill="${op.claro ? '#a0332c' : '#f19a94'}">no inspeccionado</text>`;
-  for (let d = 0; d <= L + 0.001; d += paso) s += `<line x1="${X(d)}" x2="${X(d)}" y1="${yc + 12}" y2="${yc + 18}" stroke="${sub}"/><text x="${X(d)}" y="${yc + 31}" font-size="11" text-anchor="middle" fill="${sub}">${nf(d, 0)}</text>`;
-  s += `<text x="${(x0 + x1) / 2}" y="${yc + 48}" font-size="11" text-anchor="middle" fill="${sub}">Distancia desde ${esc(t.sentido === 'Aguas arriba' ? 'el pozo final' : 'el pozo inicial')} (m) · Longitud ${nf(L)} m</text>`;
+  if (insp && insp < L) {
+    /* tramo no inspeccionado: el texto va dentro solo si cabe; si no, debajo del tubo, centrado en el tramo */
+    const ancho = x1 - X(insp), xm = (X(insp) + x1) / 2, cabe = ancho > 130;
+    s += `<rect x="${X(insp)}" y="${yc - 9}" width="${ancho}" height="18" fill="${op.claro ? '#f3d9d6' : '#3a1f27'}"/>`;
+    if (cabe) s += `<text x="${xm}" y="${yc + 4}" text-anchor="middle" font-size="11" fill="${op.claro ? '#a0332c' : '#f19a94'}">no inspeccionado</text>`;
+    else s += `<text x="${Math.min(xm, x1 - 58)}" y="${yc + 27}" text-anchor="middle" font-size="10.5" fill="${op.claro ? '#a0332c' : '#f19a94'}">no inspeccionado</text>`;
+  }
+  for (let d = 0; d <= L + 0.001; d += paso) s += `<line x1="${X(d)}" x2="${X(d)}" y1="${yc + 12}" y2="${yc + 18}" stroke="${sub}"/><text x="${X(d)}" y="${yc + 44}" font-size="11" text-anchor="middle" fill="${sub}">${nf(d, 0)}</text>`;
+  s += `<text x="${(x0 + x1) / 2}" y="${yc + 62}" font-size="11" text-anchor="middle" fill="${sub}">Distancia desde ${esc(t.sentido === 'Aguas arriba' ? 'el pozo final' : 'el pozo inicial')} (m) · Longitud ${nf(L)} m</text>`;
   [[x0, t.pozoIni || 'Inicial'], [x1, t.pozoFin || 'Final']].forEach(([x, n]) => {
     s += `<rect x="${x - 15}" y="${yc - 30}" width="30" height="60" rx="5" fill="none" stroke="${op.claro ? '#0a2a4a' : '#5cc8e4'}" stroke-width="2.5"/><text x="${x}" y="${yc - 38}" font-size="13" font-weight="700" text-anchor="middle" fill="${tinta}">${esc(n)}</text>`;
+    /* los rótulos de los hallazgos van por encima de los nombres de los pozos */
   });
   const ax = t.sentido === 'Aguas arriba' ? -1 : 1, am = x0 + 60, ya = H - 14;
   s += `<path d="M${am - 30 * ax} ${ya} L${am + 30 * ax} ${ya} M${am + 22 * ax} ${ya - 5} L${am + 30 * ax} ${ya} L${am + 22 * ax} ${ya + 5}" stroke="${sub}" stroke-width="1.5" fill="none"/><text x="${am + 42}" y="${ya + 4}" font-size="11" fill="${sub}">Sentido de la inspección: ${esc((t.sentido || 'Aguas abajo').toLowerCase())}</text>`;
@@ -66,11 +73,17 @@ function perfilSVG(t, op = {}) {
   ob.filter((o) => o.distFin != null && o.distFin > o.dist).forEach((o) => { s += `<rect x="${X(o.dist)}" y="${yc - 6}" width="${Math.max(2, X(o.distFin) - X(o.dist))}" height="12" fill="${GRADOS[o.grado || 0].c}" opacity=".55"/>`; });
   let ult = -1e9, nivel = 0;
   ob.forEach((o) => {
-    const x = X(o.dist), c = GRADOS[o.grado || 0].c; nivel = x - ult < 46 ? (nivel + 1) % 3 : 0; ult = x;
-    const yl = yc - 50 - nivel * 16;
-    const n = t.obs.indexOf(o) + 1;
-    s += `<g data-obs="${o.id}" style="cursor:pointer"><line x1="${x}" x2="${x}" y1="${yc - 9}" y2="${yl + 3}" stroke="${c}" stroke-width="1.5"/><circle cx="${x}" cy="${yc}" r="7" fill="${c}" stroke="${op.claro ? '#fff' : '#03070d'}" stroke-width="2"/>`
-      + `<text x="${x}" y="${yl}" font-size="11.5" font-weight="700" text-anchor="middle" fill="${c}">${esc(o.codigo || '#' + n)}</text></g>`;
+    const x = X(o.dist), c = GRADOS[o.grado || 0].c, n = t.obs.indexOf(o) + 1;
+    const borde = x - x0 < 26 ? -1 : x1 - x < 26 ? 1 : 0;   // junto a un pozo
+    /* inicio y fin de la inspección junto al pozo: el recuadro del pozo ya los marca, solo el punto */
+    if (borde && (o.codigo === 'INI' || o.codigo === 'FIN')) { s += `<g data-obs="${o.id}" style="cursor:pointer"><circle cx="${x}" cy="${yc}" r="6" fill="${c}" stroke="${op.claro ? '#fff' : '#03070d'}" stroke-width="2"/></g>`; return; }
+    nivel = x - ult < 46 ? (nivel + 1) % 3 : 0; ult = x;
+    const yl = yc - 60 - nivel * 15;
+    /* junto a un pozo el rótulo se corre hacia el centro para no tapar el nombre del pozo */
+    const xl = borde === -1 ? x0 + 28 : borde === 1 ? x1 - 28 : x, an = 'middle';
+    const ruta = borde ? `${x},${yc - 9} ${x},${yc - 20} ${xl},${yc - 20} ${xl},${yl + 4}` : `${x},${yc - 9} ${x},${yl + 4}`;
+    s += `<g data-obs="${o.id}" style="cursor:pointer"><polyline points="${ruta}" fill="none" stroke="${c}" stroke-width="1.5"/><circle cx="${x}" cy="${yc}" r="7" fill="${c}" stroke="${op.claro ? '#fff' : '#03070d'}" stroke-width="2"/>`
+      + `<text x="${xl}" y="${yl}" font-size="11.5" font-weight="700" text-anchor="${an}" fill="${c}">${esc(o.codigo || '#' + n)}</text></g>`;
   });
   return s + '</svg>';
 }

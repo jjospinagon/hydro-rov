@@ -1256,8 +1256,8 @@ function fichaHallazgo(ids, idx, op) {
       <div class="mb"><div class="ficha">
         <div class="fi-izq">
           <div class="fi-img">${src ? `<img src="${src}" alt="">` : `<div class="sin">${ico('foto')}<span>Sin foto</span></div>`}
-            ${o.tiempo != null ? `<span class="nro">${fmtT(o.tiempo)} del video</span>` : ''}${o.foto && !o.foto.id ? '<span class="pend">Subiendo a Drive…</span>' : ''}</div>
-          <div class="fi-acc">${src ? `<button type="button" class="btn sm" data-fx="anotar">${ico('lapiz')}Marcar sobre la foto</button>` : ''}<button type="button" class="btn sm" data-fx="foto">${ico('foto')}${src ? 'Cambiar foto' : 'Agregar foto'}</button></div>
+            ${o.foto && !o.foto.id ? '<span class="pend">Subiendo a Drive…</span>' : ''}</div>
+          <div class="fi-acc">${o.tiempo != null ? `<span class="fi-t" title="Punto del video donde se capturó (solo en la app; no sale en el informe)">${ico('ir')}${fmtT(o.tiempo)} del video</span>` : ''}${src ? `<button type="button" class="btn sm" data-fx="anotar">${ico('lapiz')}Marcar sobre la foto</button>` : ''}<button type="button" class="btn sm" data-fx="foto">${ico('foto')}${src ? 'Cambiar foto' : 'Agregar foto'}</button></div>
         </div>
           <div class="fi-hr"><div><span class="lbl">Posición horaria</span><div id="fx-reloj">${relojSVG(o)}</div></div>
             <p class="ayuda" style="margin:0">Toque la hora donde empieza el daño y luego donde termina, mirando aguas abajo (12 = clave, 6 = solera). Un solo toque marca un punto.<br><button type="button" class="btn xs" data-fx="hlimpiar" style="margin-top:8px">Borrar posición</button></p></div>

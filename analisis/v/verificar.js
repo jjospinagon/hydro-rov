@@ -95,11 +95,11 @@ async function porArchivo(f) {
   try {
     const hx = await huella(f);
     const r = await api('verificarHuella', { h: hx });
-    if (r.ok) { history.replaceState(null, '', '?c=' + r.codigo); return mostrar(r.codigo, { nombre: f.name, tipo: tipoArchivo(f), hx, coincide: true }); }
+    if (r.ok) { history.replaceState(null, '', location.pathname + '?c=' + r.codigo); return mostrar(r.codigo, { nombre: f.name, tipo: tipoArchivo(f), hx, coincide: true }); }
     const cod = await codigoEnArchivo(f);
     if (cod) {
       const v = await api('verificar', { c: cod });
-      if (v.ok) { history.replaceState(null, '', '?c=' + cod); return mostrar(cod, { nombre: f.name, tipo: tipoArchivo(f), hx, coincide: false }, v); }
+      if (v.ok) { history.replaceState(null, '', location.pathname + '?c=' + cod); return mostrar(cod, { nombre: f.name, tipo: tipoArchivo(f), hx, coincide: false }, v); }
     }
     $('#res').innerHTML = `<div class="res no"><b>✕ Este archivo no corresponde a ningún informe emitido por HYDRO-ROV.</b><br>
       ${cod ? `El archivo menciona el código <b class="mono">${esc(cod)}</b>, pero ese código no está registrado.` : 'No coincide con ningún archivo emitido y no se encontró en él un código de verificación válido.'}
@@ -183,7 +183,7 @@ async function mostrar(cod, arch, pre) {
     try { r = await api('verificar', { c: cod }); } catch (e) { $('#main').innerHTML = '<div class="estado no"><div class="ic">!</div><div><h1>No se pudo consultar</h1><p>Revise su conexión e intente de nuevo.</p></div></div>'; return; }
   }
   if (!r.ok) { formulario(r.error || 'Este código no corresponde a ningún informe emitido por HYDRO-ROV.'); return; }
-  const em = r.emision, otro = '<p class="otro no-print"><a href="./">← Verificar otro informe</a></p>';
+  const em = r.emision, otro = '<p class="otro no-print"><a href="${location.pathname}">← Verificar otro informe</a></p>';
   const datos = `<div class="datos"><div><span>Código</span><b class="mono">${esc(em.codigo)}</b></div><div><span>Informe</span><b class="mono">${esc(em.id)} · rev. ${esc(em.rev)}</b></div><div><span>Emitido</span><b>${esc(fechaHora(em.fecha))}</b></div>
     <div style="grid-column:span 2"><span>Proyecto</span><b>${esc(em.titulo || '—')}</b></div><div><span>Emitido por</span><b>${esc(em.por || '')}</b></div></div>`;
   if (em.anulado) {
@@ -211,7 +211,7 @@ async function mostrar(cod, arch, pre) {
     const hx = await huella(f), fmt = /\.docx$/i.test(f.name) ? 'docx' : 'pdf';
     if (lista(fmt).indexOf(hx) >= 0) return mostrar(cod, { nombre: f.name, tipo: tipoArchivo(f), hx, coincide: true }, r);
     const ajeno = await api('verificarHuella', { h: hx }).catch(() => ({}));
-    if (ajeno.ok && ajeno.codigo !== cod) { $('#res').innerHTML = `<div class="res no"><b>Este archivo pertenece a otro informe emitido (código ${esc(ajeno.codigo)}).</b> <a href="?c=${esc(ajeno.codigo)}">Ver ese informe</a>.</div>`; return; }
+    if (ajeno.ok && ajeno.codigo !== cod) { $('#res').innerHTML = `<div class="res no"><b>Este archivo pertenece a otro informe emitido (código ${esc(ajeno.codigo)}).</b> <a href="${location.pathname}?c=${esc(ajeno.codigo)}">Ver ese informe</a>.</div>`; return; }
     mostrar(cod, { nombre: f.name, tipo: tipoArchivo(f), hx, coincide: false }, r);
   });
   cargarFotos(r.informe); cargarMapas(r.informe);
