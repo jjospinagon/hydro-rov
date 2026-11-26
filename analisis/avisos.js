@@ -101,7 +101,7 @@ async function activar() {
   try {
     await suscribir(); pr.set(0.8);
     const r = await HR.apiOk('pushProbar');
-    HR.toast(r.enviados ? 'Notificaciones activadas. Le llegará una de prueba en unos segundos.' : 'Notificaciones activadas en este equipo.', 'ok', 7000);
+    HR.toast(r.enviados ? 'Notificaciones activadas. Le llegará una de prueba en unos segundos.' : 'Quedó suscrito, pero el servicio de notificaciones no aceptó el envío de prueba. Avíseme para revisarlo.', r.enviados ? 'ok' : 'err', 9000);
     cargar(); pintarPanel(); document.querySelectorAll('.ag-push').forEach((b) => b.classList.add('hide'));
     if (HR.push.alCambiar) HR.push.alCambiar();
   } catch (e) { HR.toast('No se pudieron activar: ' + esc(e.message), 'err', 9000); } finally { pr.fin(); }
