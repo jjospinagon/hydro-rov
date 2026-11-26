@@ -747,6 +747,6 @@ async function docxAlt(I, op) {
 window.HRExport = {
   pdf: (I, op = {}) => (op.formato === 'alt' ? pdfAlt(I, op) : pdf(I, op)),
   docx: (I, op = {}) => (op.formato === 'alt' ? docxAlt(I, op) : docx(I, op)),
-  mapaPNG
+  mapaPNG, logoPNG, cargar, b64aU8, blobB64
 };
 })();

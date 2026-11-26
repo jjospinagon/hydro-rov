@@ -1,7 +1,7 @@
 {
   "name": "HYDRO-ROV · Análisis de inspección",
   "short_name": "HYDRO-ROV",
-  "description": "Informes de inspección CCTV de redes de alcantarillado.",
+  "description": "Informes de inspección CCTV, cotizaciones y agenda de HYDRO-ROV.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -9,8 +9,56 @@
   "theme_color": "#070b14",
   "lang": "es-CO",
   "icons": [
-    {"src": "icono-192.png", "sizes": "192x192", "type": "image/png"},
-    {"src": "icono-512.png", "sizes": "512x512", "type": "image/png"},
-    {"src": "icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+    {
+      "src": "icono-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icono-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icono-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Agenda",
+      "short_name": "Agenda",
+      "url": "./#agenda",
+      "icons": [
+        {
+          "src": "icono-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Cotizaciones",
+      "short_name": "Cotizaciones",
+      "url": "./#cotizaciones",
+      "icons": [
+        {
+          "src": "icono-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Informes",
+      "short_name": "Informes",
+      "url": "./#informes",
+      "icons": [
+        {
+          "src": "icono-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

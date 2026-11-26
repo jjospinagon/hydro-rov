@@ -178,6 +178,7 @@ function entrar() {
   pintarUsuario();
   $('#ver').textContent = 'v' + (C.VERSION || '');
   route();
+  if (HR.avisos) HR.avisos.iniciar();
 }
 function pintarUsuario() {
   const n = S.user.nombre || S.user.email;
@@ -201,7 +202,7 @@ async function salir() {
   if (S.cola.length || Object.values(S.subidasVideo).some((x) => x.estado === 'subiendo')) {
     if (!(await confirmar('Hay archivos subiendo', 'Si sale ahora se pierden las fotos o el video que aún no terminan de subir a Drive.', 'Salir de todos modos', true))) return;
   }
-  const t = S.token; cerrarLocal(); S.inf = null;
+  const t = S.token; cerrarLocal(); S.inf = null; if (HR.avisos) HR.avisos.detener();
   try { await fetch(C.API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'logout', token: t }) }); } catch (e) { /* nada */ }
   location.hash = ''; mostrarLogin();
 }
@@ -210,22 +211,29 @@ async function route() {
   if (!S.user) return;
   const p = (location.hash.replace(/^#/, '') || 'informes').split('/');
   if (S.recienCreado && !(p[0] === 'informe' && decodeURIComponent(p[1] || '') === S.recienCreado)) S.recienCreado = null;
+  const M = window.HRMod || {};
+  if (M.salir && !(p[0] === 'cotizacion' && p[1])) await M.salir();
   if (p[0] === 'informe' && p[1]) return abrirInforme(decodeURIComponent(p[1]), p[2]);
   if (S.inf) await guardarAhora();
+  if (p[0] === 'cotizacion' && p[1] && M.abrirCot) { ver('cotizacion'); return M.abrirCot(decodeURIComponent(p[1]), p[2]); }
+  if (p[0] === 'cotizaciones' || p[0] === 'agenda') return ver(p[0]);
   if ((p[0] === 'usuarios' || p[0] === 'auditoria') && esCreador()) return ver(p[0]);
   if (p[0] === 'cuenta') return ver('cuenta');
   return ver('informes');
 }
 function ver(v) {
-  $$('#side a[data-v]').forEach((a) => a.classList.toggle('on', a.dataset.v === v || (v === 'editor' && a.dataset.v === 'informes')));
+  $$('#side a[data-v]').forEach((a) => a.classList.toggle('on', a.dataset.v === v || (v === 'editor' && a.dataset.v === 'informes') || (v === 'cotizacion' && a.dataset.v === 'cotizaciones')));
   $$('.vista').forEach((s) => s.classList.toggle('on', s.id === 'v-' + v));
-  const t = { informes: 'Informes de inspección', usuarios: 'Usuarios', auditoria: 'Registro de actividad', cuenta: 'Mi cuenta' }[v];
+  const t = { informes: 'Informes de inspección', usuarios: 'Usuarios', auditoria: 'Registro de actividad', cuenta: 'Mi cuenta', cotizaciones: 'Cotizaciones', cotizacion: 'Cotización', agenda: 'Agenda de visitas y trabajos' }[v];
   if (t) $('#ctx-t').textContent = t;
   window.scrollTo(0, 0);
   if (v === 'informes') cargarLista();
   if (v === 'usuarios') verUsuarios();
   if (v === 'auditoria') verAuditoria();
   if (v === 'cuenta') verCuenta();
+  const M = window.HRMod || {};
+  if (v === 'cotizaciones' && M.listaCot) M.listaCot();
+  if (v === 'agenda' && M.agenda) M.agenda();
 }
 
 /* ============================================================ lista de informes */
@@ -1390,6 +1398,14 @@ function anotar(o, alCerrar) {
 
 /* ============================================================ guardado automático */
 function setSync(c, t) { const s = $('#sync'); s.className = c; $('#sync-t').textContent = t; }
+/* utilidades compartidas con los módulos Cotizaciones y Agenda (cotizar.js, agenda.js) */
+HR.ui = { $, $$, ico, uid, sleep, pn, hoy, hace, abrirModal, cerrarModal, confirmar, setSync, ver,
+  esCreador: () => esCreador(), esLector: () => esLector(),
+  crearInforme: async (general) => {
+    const r = await apiOk('crear', { informe: { estado: 'BORRADOR', general: Object.assign({ tipo: 'CCTV con equipo robotizado', departamento: 'Quindío', equipo: C.EQUIPO_DEFECTO, fechaInspeccion: hoy(), fechaInforme: hoy() }, general),
+      tramos: [nuevoTramo()], conclusiones: '', recomendaciones: '', alcance: '', firmas: firmasBase() } });
+    S.inf = null; S.recienCreado = r.informe.id; location.hash = 'informe/' + r.informe.id; return r.informe.id;
+  } };
 function marcarSucio() {
   if (!S.inf || esLector()) return;
   S.dirty = true; setSync('pend', 'Cambios sin guardar');
@@ -1758,7 +1774,9 @@ function verCuenta() {
       <label class="campo"><span>Nueva contraseña (mínimo 8 caracteres, letras y números)</span><input id="k-n" type="password" autocomplete="new-password"></label>
       <label class="campo"><span>Repita la nueva</span><input id="k-n2" type="password" autocomplete="new-password"></label>
       <button class="btn pri" type="submit">Guardar contraseña</button><div class="msg" id="k-msg"></div></form><p class="ayuda" style="margin-top:12px">Al cambiarla se cierran sus sesiones abiertas en otros equipos.</p></div>
-    <div class="card" style="max-width:560px"><h3>${ico('escudo')}Seguridad</h3><p style="color:var(--mut);margin-bottom:14px">Tras 5 intentos fallidos la cuenta se bloquea 15 minutos. Las sesiones vencen solas; si marcó «mantener la sesión», dura 30 días en ese equipo.</p></div>`;
+    <div class="card" style="max-width:560px"><h3>${ico('escudo')}Seguridad</h3><p style="color:var(--mut);margin-bottom:14px">Tras 5 intentos fallidos la cuenta se bloquea 15 minutos. Las sesiones vencen solas; si marcó «mantener la sesión», dura 30 días en ese equipo.</p></div>
+    <div id="cuenta-push"></div>`;
+  if (HR.push) HR.push.tarjeta($('#cuenta-push'));
   $('#k-form').addEventListener('submit', async (e) => {
     e.preventDefault(); const m = $('#k-msg');
     if ($('#k-n').value !== $('#k-n2').value) { m.textContent = 'Las contraseñas nuevas no coinciden.'; m.className = 'msg err'; return; }
